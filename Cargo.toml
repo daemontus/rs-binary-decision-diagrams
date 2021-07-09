@@ -1,0 +1,15 @@
+[package]
+name = "binary-decision-diagrams"
+version = "0.1.0"
+authors = ["Samuel Pastva <daemontus@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+fxhash = "0.2.1"
+
+[dev-dependencies]
+criterion = "0.3.4"
+
+[[bench]]
+name = "itgr"
+harness = false
