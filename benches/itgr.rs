@@ -29,14 +29,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
         let right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
-        if left.node_count() * right.node_count() > usize::from(u16::MAX) {
+        //if left.node_count() * right.node_count() > usize::from(u16::MAX) {
             println!("Size limit: {} * {} = {}", left.node_count(), right.node_count(), left.node_count() * right.node_count());
             group.bench_function(benchmark, |b| {
                 b.iter(|| {
                     left.and_not(&right)
                 });
             });
-        }
+        //}
     }
     group.finish();
 }
