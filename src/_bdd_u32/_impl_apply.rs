@@ -53,25 +53,6 @@ pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
             }
 
             to_process = task_queue.tasks[to_process].next_task;
-            if to_process != 0 {
-                let (low_task, high_task) = task_queue.tasks[to_process].dependencies;
-                let low_result = task_queue.tasks[low_task].result;
-                let high_result = task_queue.tasks[high_task].result;
-
-                if low_result == high_result {
-                    task_queue.tasks[to_process].result = low_result;
-                } else {
-                    let saved_pointer = node_cache.read(variable, low_result | high_result);
-                    if saved_pointer.is_undef() {
-                        let pointer = result.create_node(variable, low_result, high_result);
-                        task_queue.tasks[to_process].result = pointer;
-                        node_cache.write(variable, low_result | high_result, pointer);
-                    } else {
-                        task_queue.tasks[to_process].result = saved_pointer;
-                    }
-                }
-            }
-            to_process = task_queue.tasks[to_process].next_task;
         }
     }
 
