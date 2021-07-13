@@ -5,13 +5,16 @@ use std::cmp::max;
 impl Bdd {
 
     pub fn new_false() -> Bdd {
-        Bdd {
+        /*Bdd {
             node_variables: vec![Variable::from(0)],
             node_pointers: vec![Pointer::zero() | Pointer::zero()]
+        }*/
+        Bdd {
+            nodes: vec![(0, 0, Variable::from(0), Pointer::zero() | Pointer::zero())]
         }
     }
 
-    pub fn new_true() -> Bdd {
+    /*pub fn new_true() -> Bdd {
         Bdd {
             node_variables: vec![
                 Variable::from(0),
@@ -22,10 +25,10 @@ impl Bdd {
                 Pointer::one() | Pointer::one(),
             ]
         }
-    }
+    }*/
 
     pub fn new_true_with_variables(variable_count: u16) -> Bdd {
-        Bdd {
+        /*Bdd {
             node_variables: vec![
                 Variable::from(variable_count), Variable::from(variable_count)
             ],
@@ -33,50 +36,62 @@ impl Bdd {
                 Pointer::zero() | Pointer::zero(),
                 Pointer::one() | Pointer::one(),
             ]
+        }*/
+        Bdd {
+            nodes: vec![
+                (0,0,Variable::from(variable_count), Pointer::zero() | Pointer::zero()),
+                (0,0,Variable::from(variable_count), Pointer::one() | Pointer::one()),
+            ]
         }
     }
 
     #[inline]
     pub(crate) fn create_node(&mut self, variable: Variable, low: Pointer, high: Pointer) -> Pointer {
-        self.node_variables.push(variable);
-        self.node_pointers.push(low | high);
-        Pointer((self.node_pointers.len() - 1) as u32)
+        //self.node_variables.push(variable);
+        //self.node_pointers.push(low | high);
+        //Pointer((self.node_pointers.len() - 1) as u32)
+        self.nodes.push((0,0,variable, low | high));
+        Pointer((self.nodes.len() - 1) as u32)
     }
 
     pub(crate) fn push_node(&mut self, variable: Variable, pointers: PointerPair) {
-        self.node_variables.push(variable);
-        self.node_pointers.push(pointers);
+        //self.node_variables.push(variable);
+        //self.node_pointers.push(pointers);
+        self.nodes.push((0,0,variable, pointers));
     }
 
     pub fn variable_count(&self) -> u16 {
-        unsafe { self.node_variables.get_unchecked(0).0 }
+        //unsafe { self.node_variables.get_unchecked(0).0 }
+        unsafe { self.nodes.get_unchecked(0).2.0 }
     }
 
     #[inline]
     pub(crate) fn var_of(&self, pointer: Pointer) -> Variable {
-        unsafe { *self.node_variables.get_unchecked(pointer.0 as usize) }
+        unsafe { self.nodes.get_unchecked(pointer.0 as usize).2 }
     }
 
     #[inline]
     pub(crate) fn pointers_of(&self, pointer: Pointer) -> PointerPair {
-        unsafe { *self.node_pointers.get_unchecked(pointer.0 as usize) }
-    }
+        unsafe {
+            let pointers = self.nodes.get_unchecked(pointer.0 as usize).3;
 
-    pub fn ensure_variables(&mut self, variables: u16) {
-        if let Some(zero) = self.node_variables.get_mut(0) {
-            *zero = max(zero.0, variables).into();
-        }
-        if let Some(one) = self.node_variables.get_mut(1) {
-            *one = max(one.0, variables).into();
+            // This actually helps a bit! (5%?)
+            let (low, high) = pointers.unpack();
+            let low_ref: *const (u32, u16, Variable, PointerPair) = self.nodes.get_unchecked(low.0 as usize);
+            std::arch::x86_64::_mm_prefetch::<3>(low_ref as (*const i8));
+            let high_ref: *const (u32, u16, Variable, PointerPair) = self.nodes.get_unchecked(high.0 as usize);
+            std::arch::x86_64::_mm_prefetch::<3>(high_ref as (*const i8));
+
+            pointers
         }
     }
 
     pub(crate) fn root_pointer(&self) -> Pointer {
-        Pointer((self.node_pointers.len() - 1) as u32)
+        Pointer((self.nodes.len() - 1) as u32)
     }
 
     pub fn node_count(&self) -> usize {
-        self.node_pointers.len()
+        self.nodes.len()
     }
 
 }
@@ -91,8 +106,9 @@ impl TryFrom<&str> for Bdd {
     type Error = String;
 
     fn try_from(data: &str) -> Result<Self, Self::Error> {
-        let mut node_variables = Vec::new();
-        let mut node_pointers = Vec::new();
+        //let mut node_variables = Vec::new();
+        //let mut node_pointers = Vec::new();
+        let mut nodes = Vec::new();
         for node_string in data.split('|').filter(|s| !s.is_empty()) {
             let mut node_items = node_string.split(',');
             let variable = node_items.next();
@@ -110,10 +126,11 @@ impl TryFrom<&str> for Bdd {
             let right_pointer = if let Ok(x) = right_pointer.unwrap().parse::<u32>() { x } else {
                 return Err(format!("Invalid pointer numeral `{}`.", right_pointer.unwrap()))
             };
-            node_variables.push(Variable(variable));
-            node_pointers.push(Pointer(left_pointer) | Pointer(right_pointer));
+            //node_variables.push(Variable(variable));
+            //node_pointers.push(Pointer(left_pointer) | Pointer(right_pointer));
+            nodes.push((0,0,Variable(variable), Pointer(left_pointer) | Pointer(right_pointer)));
         }
-        Ok(Bdd { node_variables, node_pointers })
+        Ok(Bdd { nodes })
     }
 
 }

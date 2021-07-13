@@ -42,7 +42,7 @@ pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
             if low_result == high_result {
                 task_queue.tasks[to_process].result = low_result;
             } else {
-                let saved_pointer = node_cache.read(variable, low_result | high_result);
+                let saved_pointer = node_cache.read(variable, low_result | high_result, &result);
                 if saved_pointer.is_undef() {
                     let pointer = result.create_node(variable, low_result, high_result);
                     task_queue.tasks[to_process].result = pointer;

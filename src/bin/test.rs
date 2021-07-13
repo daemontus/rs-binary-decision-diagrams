@@ -1,5 +1,7 @@
 use binary_decision_diagrams::Bdd;
 use std::convert::TryFrom;
+use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
+use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
 fn main() {
     let mut benchmarks = Vec::new();
@@ -29,7 +31,17 @@ fn main() {
         let left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
         let right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
-        let result = left.and_not(&right);
-        println!("{} {}: {}", node_count, benchmark, result.node_count());
+        if left.node_count() == 326271 {
+            let mut task_cache = TaskCache::new(326271);
+            //let mut stack = UnrolledStack::new(5000);
+            let mut node_cache =  PartialNodeCache::new(2 * 326271);
+            println!("Task count: {}", gen_tasks(&left, &right, &mut task_cache, &mut node_cache));
+            let mut k = 0 ;
+            for _ in 0..1000 {
+                k += gen_tasks(&left, &right, &mut task_cache, &mut node_cache);
+            }
+            println!("Just for fun {}", k);
+        }
+        //println!("{} {}: {}", node_count, benchmark, result.node_count());
     }
 }

@@ -5,6 +5,9 @@ mod _impl_partial_task_cache;
 mod _impl_partial_node_cache;
 mod _impl_complete_task_queue;
 mod _impl_apply;
+pub mod _impl_task_bench;
+pub mod _impl_task_bench_2;
+pub mod _impl_task_bench_3;
 
 pub use _impl_apply::and_not;
 
@@ -33,8 +36,8 @@ struct Task {
     next_task: usize,
 }
 
-struct PartialNodeCache {
+pub struct PartialNodeCache {
     capacity: NonZeroU64,
-    keys: Vec<(Variable, PointerPair)>,
+    //keys: Vec<(Variable, PointerPair)>,
     values: Vec<Pointer>,
 }

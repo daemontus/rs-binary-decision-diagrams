@@ -1,4 +1,6 @@
 
+pub mod v2;
+
 mod _impl_bdd_utils;
 mod _impl_pointer;
 
@@ -17,7 +19,7 @@ mod _impl_u8;
 
 /// Contains a faster implementation of `Bdd` operations for `Bdds` where pointers fit into `u16`.
 pub(crate) mod _bdd_u16;
-pub(crate) mod _bdd_u32;
+pub mod _bdd_u32;
 
 const SEED64: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 const SEED32: u32 = 0x9e_37_79_b9;
@@ -26,14 +28,14 @@ const SEED16: u16 = SEED32 as u16;
 pub mod function;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct Variable(u16);
+pub struct Variable(u16);
 
 // Private types used for pointing to a single BDD node or a low/high pair of nodes.
 // Value u32::MAX is reserved as an undefined value.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-struct Pointer(u32);
+pub struct Pointer(u32);
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-struct PointerPair(u64);
+pub struct PointerPair(u64);
 
 // The reason for separating the variables from pointers is to make the
 // representation as compact as possible so that we can fit as much as possible
@@ -42,7 +44,8 @@ struct PointerPair(u64);
 
 #[derive(Clone)]
 pub struct Bdd {
-    node_variables: Vec<Variable>,
-    node_pointers: Vec<PointerPair>,
+    //node_variables: Vec<Variable>,
+    //node_pointers: Vec<PointerPair>,
+    nodes: Vec<(u32, u16, Variable, PointerPair)>
 }
 
