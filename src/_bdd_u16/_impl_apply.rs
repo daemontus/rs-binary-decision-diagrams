@@ -1,18 +1,26 @@
 use crate::Bdd;
+use crate::_bdd_u16::{NodeU64, PointerU16, StaticNodeCache, StaticStack, StaticTaskCache};
 use std::cmp::{max, min};
-use crate::_bdd_u16::{StaticTaskCache, StaticNodeCache, StaticStack, PointerU16, NodeU64};
 
-pub fn and_not<const STACK: usize, const TASKS: usize, const NODES: usize>(left: &Bdd, right: &Bdd) -> Bdd {
+pub fn and_not<const STACK: usize, const TASKS: usize, const NODES: usize>(
+    left: &Bdd,
+    right: &Bdd,
+) -> Bdd {
     debug_assert!(left.node_count() * right.node_count() < usize::from(u16::MAX));
     let variable_count = max(left.variable_count(), right.variable_count());
 
     let mut result = Bdd::new_true_with_variables(variable_count);
     let mut result_is_empty = true;
 
-    let mut task_cache: StaticTaskCache<TASKS> = StaticTaskCache::new(left.node_count(), right.node_count());
-    let mut node_cache: StaticNodeCache<NODES> = StaticNodeCache::new(max(left.node_count(), right.node_count()));
+    let mut task_cache: StaticTaskCache<TASKS> =
+        StaticTaskCache::new(left.node_count(), right.node_count());
+    let mut node_cache: StaticNodeCache<NODES> =
+        StaticNodeCache::new(max(left.node_count(), right.node_count()));
     let mut stack: StaticStack<STACK> = StaticStack::new(variable_count);
-    stack.push(left.root_pointer().into_u16(), right.root_pointer().into_u16());
+    stack.push(
+        left.root_pointer().into_u16(),
+        right.root_pointer().into_u16(),
+    );
 
     while !stack.is_empty() {
         let (l, r) = stack.peek();
@@ -67,7 +75,9 @@ pub fn and_not<const STACK: usize, const TASKS: usize, const NODES: usize>(left:
                     let node = NodeU64::pack(decision_variable, low_result, high_result);
                     let saved = node_cache.read(node);
                     if saved.is_undefined() {
-                        let pointer = result.create_node(decision_variable, low_result.into(), high_result.into()).into_u16();
+                        let pointer = result
+                            .create_node(decision_variable, low_result.into(), high_result.into())
+                            .into_u16();
                         node_cache.write(node, pointer);
                         pointer
                     } else {

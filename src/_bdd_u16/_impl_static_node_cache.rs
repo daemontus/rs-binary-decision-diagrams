@@ -1,8 +1,7 @@
-use crate::_bdd_u16::{StaticNodeCache, NodeU64, PointerU16};
+use crate::_bdd_u16::{NodeU64, PointerU16, StaticNodeCache};
 use crate::{Variable, SEED64};
 
 impl<const N: usize> StaticNodeCache<N> {
-
     pub fn new(capacity: usize) -> StaticNodeCache<N> {
         debug_assert!(N < usize::from(u16::MAX));
         debug_assert!(capacity <= N);
@@ -43,5 +42,4 @@ impl<const N: usize> StaticNodeCache<N> {
     fn hashed_index(node: NodeU64) -> usize {
         (node.0.wrapping_mul(SEED64) % (N as u64)) as usize
     }
-
 }

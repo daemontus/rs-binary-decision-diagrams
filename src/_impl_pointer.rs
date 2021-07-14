@@ -1,8 +1,7 @@
 use crate::{Pointer, PointerPair};
-use std::ops::{Shl, BitOr, Shr};
+use std::ops::{BitOr, Shl, Shr};
 
 impl Pointer {
-
     #[inline]
     pub fn zero() -> Pointer {
         Pointer(0)
@@ -42,7 +41,7 @@ impl Pointer {
         match self.0 {
             0 => Some(false),
             1 => Some(true),
-            _ => None
+            _ => None,
         }
     }
 
@@ -60,12 +59,10 @@ impl Pointer {
 }
 
 impl PointerPair {
-
     #[inline]
     pub fn unpack(self) -> (Pointer, Pointer) {
         (Pointer(self.0.shr(32) as u32), Pointer(self.0 as u32))
     }
-
 }
 
 impl BitOr<Pointer> for Pointer {

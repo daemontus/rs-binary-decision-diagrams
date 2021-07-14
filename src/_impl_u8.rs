@@ -1,12 +1,11 @@
-use std::ops::{Shl, BitOr};
-use crate::{Pointer, SEED64, Bdd, Variable, PointerPair};
+use crate::{Bdd, Pointer, PointerPair, Variable, SEED64};
 use std::cmp::{max, min};
+use std::ops::{BitOr, Shl};
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 struct PointerU8(u8);
 
 impl PointerU8 {
-
     fn zero() -> PointerU8 {
         PointerU8(0)
     }
@@ -24,7 +23,7 @@ impl PointerU8 {
         match self.0 {
             0 => Some(false),
             1 => Some(true),
-            _ => None
+            _ => None,
         }
     }
 
@@ -56,7 +55,6 @@ impl PointerU8 {
     fn is_terminal(&self) -> bool {
         self.0 <= 1
     }
-
 }
 
 struct FixedTaskCacheU8 {
@@ -69,12 +67,12 @@ struct FixedTaskCacheU8 {
 }
 
 impl FixedTaskCacheU8 {
-
     pub fn new(left_size: usize, right_size: usize) -> FixedTaskCacheU8 {
         FixedTaskCacheU8 {
             items: [(0, 0); 256],
             values: [0; 256],
-            left_size, right_size,
+            left_size,
+            right_size,
             everything: vec![u32::MAX; left_size * right_size],
             marks: vec![false; left_size * right_size],
         }
@@ -86,7 +84,8 @@ impl FixedTaskCacheU8 {
         let index = Self::hashed_index(x.0, y.0);
         let table_index = self.table_index(x.0, y.0);
         unsafe {
-            self.items.get_unchecked(index) == &(x.0, y.0) || self.everything.get_unchecked(table_index) != &u32::MAX
+            self.items.get_unchecked(index) == &(x.0, y.0)
+                || self.everything.get_unchecked(table_index) != &u32::MAX
         }
     }
 
@@ -170,7 +169,6 @@ struct FixedNodeCacheU8 {
 }
 
 impl FixedNodeCacheU8 {
-
     pub fn new() -> FixedNodeCacheU8 {
         FixedNodeCacheU8 {
             items: [(Variable(u16::MAX), PointerPair::from(0)); 512],
@@ -202,7 +200,6 @@ impl FixedNodeCacheU8 {
     fn hashed_index(pointer_pair: u64) -> usize {
         (pointer_pair.wrapping_mul(SEED64) as usize) % 512
     }
-
 }
 
 struct StackU8 {
@@ -214,7 +211,7 @@ impl StackU8 {
     pub fn new() -> StackU8 {
         StackU8 {
             index_after_top: 0,
-            items: [Frame::default(); 1024]
+            items: [Frame::default(); 1024],
         }
     }
 
@@ -246,11 +243,12 @@ impl StackU8 {
         self.items[self.index_after_top] = frame;
         self.index_after_top += 1;
     }
-
 }
 
-pub(crate) fn u8_apply<T>(left: &Bdd, right: &Bdd, lookup_table: T) -> Bdd where
-    T: Fn(Option<bool>, Option<bool>) -> Option<bool> {
+pub(crate) fn u8_apply<T>(left: &Bdd, right: &Bdd, lookup_table: T) -> Bdd
+where
+    T: Fn(Option<bool>, Option<bool>) -> Option<bool>,
+{
     debug_assert!(left.node_count() <= u8::MAX as usize && right.node_count() <= u8::MAX as usize);
 
     let variable_count = max(left.variable_count(), right.variable_count());
@@ -261,7 +259,10 @@ pub(crate) fn u8_apply<T>(left: &Bdd, right: &Bdd, lookup_table: T) -> Bdd where
     let mut node_cache = FixedNodeCacheU8::new();
     let mut stack = StackU8::new();
     //stack.push(left.root_pointer().into(), right.root_pointer().into());
-    stack.push(Frame::new(left.root_pointer().into(), right.root_pointer().into()));
+    stack.push(Frame::new(
+        left.root_pointer().into(),
+        right.root_pointer().into(),
+    ));
 
     loop {
         if stack.len() >= 4 {
@@ -270,28 +271,52 @@ pub(crate) fn u8_apply<T>(left: &Bdd, right: &Bdd, lookup_table: T) -> Bdd where
             let frame3 = stack.pop_and_get();
             let frame4 = stack.pop_and_get();
             if frame4.is_expanded() {
-                if !frame4.finalize(&mut task_cache, &mut node_cache, &mut result, &mut result_is_empty, &lookup_table) {
+                if !frame4.finalize(
+                    &mut task_cache,
+                    &mut node_cache,
+                    &mut result,
+                    &mut result_is_empty,
+                    &lookup_table,
+                ) {
                     stack.push(frame4);
                 }
             } else {
                 frame4.expand(left, right, &task_cache, &mut stack);
             }
             if frame3.is_expanded() {
-                if !frame3.finalize(&mut task_cache, &mut node_cache, &mut result, &mut result_is_empty, &lookup_table) {
+                if !frame3.finalize(
+                    &mut task_cache,
+                    &mut node_cache,
+                    &mut result,
+                    &mut result_is_empty,
+                    &lookup_table,
+                ) {
                     stack.push(frame3);
                 }
             } else {
                 frame3.expand(left, right, &task_cache, &mut stack);
             }
             if frame2.is_expanded() {
-                if !frame2.finalize(&mut task_cache, &mut node_cache, &mut result, &mut result_is_empty, &lookup_table) {
+                if !frame2.finalize(
+                    &mut task_cache,
+                    &mut node_cache,
+                    &mut result,
+                    &mut result_is_empty,
+                    &lookup_table,
+                ) {
                     stack.push(frame2);
                 }
             } else {
                 frame2.expand(left, right, &task_cache, &mut stack);
             }
             if frame1.is_expanded() {
-                if !frame1.finalize(&mut task_cache, &mut node_cache, &mut result, &mut result_is_empty, &lookup_table) {
+                if !frame1.finalize(
+                    &mut task_cache,
+                    &mut node_cache,
+                    &mut result,
+                    &mut result_is_empty,
+                    &lookup_table,
+                ) {
                     stack.push(frame1);
                 }
             } else {
@@ -300,7 +325,13 @@ pub(crate) fn u8_apply<T>(left: &Bdd, right: &Bdd, lookup_table: T) -> Bdd where
         } else if stack.len() > 0 {
             let frame = stack.pop_and_get();
             if frame.is_expanded() {
-                if !frame.finalize(&mut task_cache, &mut node_cache, &mut result, &mut result_is_empty, &lookup_table) {
+                if !frame.finalize(
+                    &mut task_cache,
+                    &mut node_cache,
+                    &mut result,
+                    &mut result_is_empty,
+                    &lookup_table,
+                ) {
                     stack.push(frame);
                 }
             } else {
@@ -391,7 +422,6 @@ impl Default for Frame {
 }
 
 impl Frame {
-
     fn new(l: PointerU8, r: PointerU8) -> Frame {
         Frame {
             task: (l, r),
@@ -413,7 +443,7 @@ impl Frame {
         node_cache: &mut FixedNodeCacheU8,
         result: &mut Bdd,
         result_is_empty: &mut bool,
-        lookup_table: &T
+        lookup_table: &T,
     ) -> bool {
         let (l_low, r_low) = self.low;
         let low_result = if let Some(value) = lookup_table(l_low.as_bool(), r_low.as_bool()) {
@@ -434,7 +464,7 @@ impl Frame {
                 *result_is_empty = false
             }
 
-            let (l,r) = self.task;
+            let (l, r) = self.task;
             let decision_var = self.var;
 
             if low_result == high_result {
@@ -456,7 +486,13 @@ impl Frame {
     }
 
     #[inline]
-    fn expand(mut self, left: &Bdd, right: &Bdd, task_cache: &FixedTaskCacheU8, stack: &mut StackU8) {
+    fn expand(
+        mut self,
+        left: &Bdd,
+        right: &Bdd,
+        task_cache: &FixedTaskCacheU8,
+        stack: &mut StackU8,
+    ) {
         let (l, r) = self.task;
         let (l_var, r_var) = (left.var_of(l.into()), right.var_of(r.into()));
         let decision_var = min(l_var, r_var);
@@ -487,7 +523,6 @@ impl Frame {
             stack.push(Frame::new(l_high, r_high));
         }
     }
-
 }
 /*
 #[inline]
@@ -593,13 +628,14 @@ mod tests {
             let node_count = size.parse::<usize>().unwrap();
             if node_count <= 256 {
                 let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
-                let left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
+                let left =
+                    Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
                 let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
-                let right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
+                let right =
+                    Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
                 let result = left.and_not(&right);
                 println!("{}: {}", benchmark, result.node_count());
             }
         }
     }
-
 }

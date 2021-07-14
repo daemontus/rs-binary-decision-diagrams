@@ -1,36 +1,37 @@
-use std::ops::{Shl, Shr, Not};
+use std::cmp::min;
 use std::convert::TryFrom;
+use std::ops::{Not, Shl, Shr};
 
 /*
-    Design philosophy: There is the `Bdd` object representing a stand-alone `Bdd`, and then there
-    is a `BddPool` which stores (possibly) multiple `Bdds` in one buffer.
+   Design philosophy: There is the `Bdd` object representing a stand-alone `Bdd`, and then there
+   is a `BddPool` which stores (possibly) multiple `Bdds` in one buffer.
 
-    For manipulating the standalone objects, there are some "optimization tricks", but we generally
-    don't do anything too magical, like pointer compression or thread local storage for buffer
-    caching. Either the `Bdd` is small and everything can be allocated on the stack, or the `Bdd`
-    is large and everything is constructed and destroyed for each operation separately,
-    resulting in a new `Bdd`.
+   For manipulating the standalone objects, there are some "optimization tricks", but we generally
+   don't do anything too magical, like pointer compression or thread local storage for buffer
+   caching. Either the `Bdd` is small and everything can be allocated on the stack, or the `Bdd`
+   is large and everything is constructed and destroyed for each operation separately,
+   resulting in a new `Bdd`.
 
-    For `BddPool`, the situation is a bit different. In particular, there is a shared task and
-    node cache. Task cache has to be cleared between each operation, but the node cache can be
-    inherited entirely. There is also another trick: If the amount of nodes is small, we use
-    compressed pointers (u16 or u32 instead of u64) which saves a bit of memory, but more
-    importantly, it saves a lot of wasted cache bandwidth.
+   For `BddPool`, the situation is a bit different. In particular, there is a shared task and
+   node cache. Task cache has to be cleared between each operation, but the node cache can be
+   inherited entirely. There is also another trick: If the amount of nodes is small, we use
+   compressed pointers (u16 or u32 instead of u64) which saves a bit of memory, but more
+   importantly, it saves a lot of wasted cache bandwidth.
 
-    The compression works like this:
-     - If (before operation), the pool is using more than 1/2 of its *current* address space, it is
-     expanded into larger pointers. Similarly, if it is using less then 1/4 of the *target*
-     address space, it is contracted.
-     - When performing an operation, we regularly check for an overflow. If overflow happens,
-     the operation "raises and exception" and triggers expansion, after which the operation is
-     restarted.
+   The compression works like this:
+    - If (before operation), the pool is using more than 1/2 of its *current* address space, it is
+    expanded into larger pointers. Similarly, if it is using less then 1/4 of the *target*
+    address space, it is contracted.
+    - When performing an operation, we regularly check for an overflow. If overflow happens,
+    the operation "raises and exception" and triggers expansion, after which the operation is
+    restarted.
 
-     From time to time, we have to run garbage collection to make sure old nodes are discarded.
+    From time to time, we have to run garbage collection to make sure old nodes are discarded.
 
-     On `BddPool`, there are two types of operations:
-        - Internal, meaning two `Bdds` in the same pool are manipulated.
-        - External, meaning an internal `Bdd` and a stand-alone `Bdd` object are considered.
- */
+    On `BddPool`, there are two types of operations:
+       - Internal, meaning two `Bdds` in the same pool are manipulated.
+       - External, meaning an internal `Bdd` and a stand-alone `Bdd` object are considered.
+*/
 
 pub mod _impl_;
 
@@ -44,7 +45,7 @@ pub mod _impl_;
 ///
 /// We *may* check some of the conversions at runtime, but in general this is an *unsafe* land.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub(crate) struct NodeId(u64);
+pub struct NodeId(u64);
 
 /// Index of a `Bdd` variable. It's range is `0..(2^16 - 1)`, but the last value is reserved
 /// as an *undefined* value.
@@ -71,10 +72,7 @@ pub struct Bdd {
 pub struct BddNode(u64, u64);
 
 /// A collection of binary decision diagrams.
-pub struct BddPool {
-
-}
-
+pub struct BddPool {}
 
 // TODO: Move this to separate modules:
 
@@ -89,7 +87,11 @@ impl BddNode {
     #[inline]
     pub(crate) fn unpack(self) -> (VariableId, NodeId, NodeId) {
         let (x, y) = (self.0, self.1);
-        (VariableId(x.shr(48) as u16), NodeId(x & Self::ID_MASK), NodeId(y))
+        (
+            VariableId(x.shr(48) as u16),
+            NodeId(x & Self::ID_MASK),
+            NodeId(y),
+        )
     }
 
     #[inline]
@@ -98,6 +100,10 @@ impl BddNode {
         BddNode(x, high.0)
     }
 
+    #[inline]
+    pub(crate) fn low_id(self) -> NodeId {
+        NodeId(self.0 & Self::ID_MASK)
+    }
 }
 
 impl NodeId {
@@ -119,6 +125,11 @@ impl NodeId {
     pub fn is_one(&self) -> bool {
         self.0 == 1
     }
+
+    // Return 0 if id is zero, 1 if id is one and 2 if id is anything else.
+    pub fn as_terminal(&self) -> u64 {
+        min(2, self.0)
+    }
 }
 
 impl VariableId {
@@ -132,7 +143,6 @@ impl Into<u64> for NodeId {
 }
 
 impl Bdd {
-
     #[inline]
     pub fn variable_count(&self) -> u16 {
         self.variable_count
@@ -147,6 +157,11 @@ impl Bdd {
     pub(crate) fn root_node(&self) -> NodeId {
         // Conversion is safe because the max. number of nodes is 2^48 - 1
         NodeId((self.nodes.len() - 1) as u64)
+    }
+
+    #[inline]
+    pub(crate) fn low_link(&self, node: NodeId) -> NodeId {
+        unsafe { self.nodes.get_unchecked(node.0 as usize).low_id() }
     }
 
     pub fn new_false() -> Bdd {
@@ -211,6 +226,40 @@ impl Bdd {
         VariableId(node.0.shr(48) as u16)
     }
 
+    pub fn sort_preorder(&mut self) {
+        let mut new_id = vec![0usize; self.nodes.len()];
+        new_id[0] = 0;
+        new_id[1] = 1;
+
+        let mut stack = vec![self.root_node()];
+
+        let mut new_index = self.nodes.len() - 1;
+        while let Some(top) = stack.pop() {
+            if top.is_one() || top.is_zero() {
+                continue;
+            }
+
+            let index = top.0 as usize;
+            if new_id[index] == 0 {
+                new_id[index] = new_index;
+                new_index -= 1;
+                let (_, low, high) = self.get_node(top).unpack();
+                stack.push(high);
+                stack.push(low);
+            }
+        }
+
+        let mut new_nodes = self.nodes.clone();
+        for old_index in 2..new_id.len() {
+            let new_index = new_id[old_index];
+            let (var, old_low, old_high) = self.nodes[old_index].unpack();
+            let new_low = new_id[old_low.0 as usize];
+            let new_high = new_id[old_high.0 as usize];
+            new_nodes[new_index] = BddNode::pack(var, NodeId(new_low as u64), NodeId(new_high as u64));
+        }
+
+        self.nodes = new_nodes;
+    }
 }
 
 impl TryFrom<&str> for Bdd {
@@ -225,23 +274,45 @@ impl TryFrom<&str> for Bdd {
             let variable = node_items.next();
             let left_pointer = node_items.next();
             let right_pointer = node_items.next();
-            if node_items.next().is_some() || variable.is_none() || left_pointer.is_none() || right_pointer.is_none() {
+            if node_items.next().is_some()
+                || variable.is_none()
+                || left_pointer.is_none()
+                || right_pointer.is_none()
+            {
                 return Err(format!("Unexpected node representation `{}`.", node_string));
             }
-            let variable = if let Ok(x) = variable.unwrap().parse::<u16>() { x } else {
+            let variable = if let Ok(x) = variable.unwrap().parse::<u16>() {
+                x
+            } else {
                 return Err(format!("Invalid variable numeral `{}`.", variable.unwrap()));
             };
-            let left_pointer = if let Ok(x) = left_pointer.unwrap().parse::<u64>() { x } else {
-                return Err(format!("Invalid pointer numeral `{}`.", left_pointer.unwrap()))
+            let left_pointer = if let Ok(x) = left_pointer.unwrap().parse::<u64>() {
+                x
+            } else {
+                return Err(format!(
+                    "Invalid pointer numeral `{}`.",
+                    left_pointer.unwrap()
+                ));
             };
-            let right_pointer = if let Ok(x) = right_pointer.unwrap().parse::<u64>() { x } else {
-                return Err(format!("Invalid pointer numeral `{}`.", right_pointer.unwrap()))
+            let right_pointer = if let Ok(x) = right_pointer.unwrap().parse::<u64>() {
+                x
+            } else {
+                return Err(format!(
+                    "Invalid pointer numeral `{}`.",
+                    right_pointer.unwrap()
+                ));
             };
             //node_variables.push(Variable(variable));
             //node_pointers.push(Pointer(left_pointer) | Pointer(right_pointer));
-            nodes.push(BddNode::pack(VariableId(variable), NodeId(left_pointer), NodeId(right_pointer)));
+            nodes.push(BddNode::pack(
+                VariableId(variable),
+                NodeId(left_pointer),
+                NodeId(right_pointer),
+            ));
         }
-        Ok(Bdd { nodes, variable_count: 98 })
+        Ok(Bdd {
+            nodes,
+            variable_count: 98,
+        })
     }
-
 }

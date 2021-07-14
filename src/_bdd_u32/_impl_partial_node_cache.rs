@@ -1,10 +1,9 @@
 use crate::_bdd_u32::PartialNodeCache;
-use crate::{Variable, PointerPair, Pointer, SEED64, Bdd};
+use crate::{Bdd, Pointer, PointerPair, Variable, SEED64};
 use std::num::NonZeroU64;
 use std::ops::Rem;
 
 impl PartialNodeCache {
-
     pub fn new(capacity: usize) -> PartialNodeCache {
         PartialNodeCache {
             capacity: NonZeroU64::new(capacity as u64).unwrap(),
@@ -27,8 +26,8 @@ impl PartialNodeCache {
             if (pointer_cell.0 as usize) < result.nodes.len() {
                 let pointer = pointer_cell.0 as usize;
                 let bdd_pointer = result.nodes.get_unchecked(pointer);
-                if *bdd_pointer == (0,0,variable, pointers) {
-                    return *pointer_cell
+                if *bdd_pointer == (0, 0, variable, pointers) {
+                    return *pointer_cell;
                 }
             }
 
@@ -57,5 +56,4 @@ impl PartialNodeCache {
         let hash = pointers.0.wrapping_mul(SEED64);
         hash.rem(self.capacity) as usize
     }
-
 }

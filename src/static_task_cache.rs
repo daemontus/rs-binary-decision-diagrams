@@ -8,17 +8,16 @@ use std::convert::TryFrom;
 struct StaticTaskCache<const N: usize> {
     dimension_x: usize,
     dimension_y: usize,
-    table: [u16; N]
+    table: [u16; N],
 }
 
-impl <const N: usize> StaticTaskCache<N> {
-
+impl<const N: usize> StaticTaskCache<N> {
     pub fn new(x: usize, y: usize) -> StaticTaskCache<N> {
         debug_assert!(x * y < usize::from(u16::MAX));
         StaticTaskCache {
             dimension_x: x,
             dimension_y: y,
-            table: [u16::MAX; N]
+            table: [u16::MAX; N],
         }
     }
 
@@ -41,5 +40,4 @@ impl <const N: usize> StaticTaskCache<N> {
         debug_assert!(usize::try_from(x.0).unwrap() < self.dimension_x);
         debug_assert!(usize::try_from(y.0).unwrap() < self.dimension_y);
     }
-
 }

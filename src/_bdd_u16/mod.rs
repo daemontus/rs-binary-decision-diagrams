@@ -1,10 +1,9 @@
-
 mod _impl_apply;
 mod _impl_node_u64;
 mod _impl_pointer_u16;
-mod _impl_static_task_cache;
 mod _impl_static_node_cache;
 mod _impl_static_stack;
+mod _impl_static_task_cache;
 
 pub use _impl_apply::and_not;
 
@@ -19,7 +18,6 @@ struct PointerU16(u16);
 /// (since it can be done in one instruction).
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 struct NodeU64(u64);
-
 
 /// Task cache maps pairs of "input" pointers to the resulting "output" pointer.
 ///

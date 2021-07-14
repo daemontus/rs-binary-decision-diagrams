@@ -1,10 +1,10 @@
-use crate::{Pointer, Variable, PointerPair};
+use crate::{Pointer, PointerPair, Variable};
 use std::num::NonZeroU64;
 
-mod _impl_partial_task_cache;
-mod _impl_partial_node_cache;
-mod _impl_complete_task_queue;
 mod _impl_apply;
+mod _impl_complete_task_queue;
+mod _impl_partial_node_cache;
+mod _impl_partial_task_cache;
 pub mod _impl_task_bench;
 pub mod _impl_task_bench_2;
 pub mod _impl_task_bench_3;

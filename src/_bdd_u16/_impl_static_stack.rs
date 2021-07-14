@@ -1,7 +1,6 @@
-use crate::_bdd_u16::{StaticStack, PointerU16};
+use crate::_bdd_u16::{PointerU16, StaticStack};
 
 impl<const N: usize> StaticStack<N> {
-
     pub fn new(variable_count: u16) -> StaticStack<N> {
         debug_assert!(usize::from(variable_count) <= N);
         StaticStack {
@@ -36,5 +35,4 @@ impl<const N: usize> StaticStack<N> {
     pub fn pop(&mut self) {
         self.index_after_last -= 1;
     }
-
 }

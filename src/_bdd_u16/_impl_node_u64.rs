@@ -1,5 +1,5 @@
-use crate::_bdd_u16::{NodeU64, PointerU16};
 use crate::Variable;
+use crate::_bdd_u16::{NodeU64, PointerU16};
 use std::ops::Shl;
 
 impl NodeU64 {

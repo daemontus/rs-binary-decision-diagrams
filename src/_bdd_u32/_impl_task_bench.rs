@@ -1,8 +1,8 @@
-use crate::{Bdd, Pointer, PointerPair, SEED64, Variable};
+use crate::_bdd_u32::PartialNodeCache;
+use crate::{Bdd, Pointer, PointerPair, Variable, SEED64};
 use std::cmp::{max, min};
 use std::num::NonZeroU64;
-use std::ops::{Shl, Rem, Not, Shr};
-use crate::_bdd_u32::PartialNodeCache;
+use std::ops::{Not, Rem, Shl, Shr};
 use std::process::exit;
 
 pub struct TaskCache {
@@ -12,7 +12,6 @@ pub struct TaskCache {
 }
 
 impl TaskCache {
-
     pub fn new(mut capacity: usize) -> TaskCache {
         TaskCache {
             capacity: NonZeroU64::new(capacity as u64).unwrap(),
@@ -62,7 +61,6 @@ impl TaskCache {
     pub fn hash(&self, pointers: PointerPair) -> usize {
         pointers.0.wrapping_mul(SEED64).rem(self.capacity) as usize
     }
-
 }
 
 // Stack entries work in two "modes".
@@ -75,7 +73,6 @@ pub struct UnrolledStack {
 }
 
 impl UnrolledStack {
-
     pub fn new(capacity: usize) -> UnrolledStack {
         let mut x = UnrolledStack {
             index_after_top: 1,
@@ -103,7 +100,9 @@ impl UnrolledStack {
 
     #[inline]
     pub fn push(&mut self, task: PointerPair) {
-        unsafe { *self.items.get_unchecked_mut(self.index_after_top) = task.0; }
+        unsafe {
+            *self.items.get_unchecked_mut(self.index_after_top) = task.0;
+        }
         self.index_after_top += 1;
     }
 
@@ -134,7 +133,8 @@ impl UnrolledStack {
 
     #[inline]
     pub fn swap_top(&mut self) {
-        self.items.swap(self.index_after_top - 1, self.index_after_top - 2);
+        self.items
+            .swap(self.index_after_top - 1, self.index_after_top - 2);
         /*unsafe {
             let top_cell = self.items.get_unchecked_mut(self.index_after_top - 1);
             let cell_below = self.items.get_unchecked_mut(self.index_after_top - 2);
@@ -165,10 +165,14 @@ impl UnrolledStack {
             }
         }
     }
-
 }
 
-pub fn gen_tasks(left_bdd: &Bdd, right_bdd: &Bdd, task_cache: &mut TaskCache, node_cache: &mut PartialNodeCache) -> usize {
+pub fn gen_tasks(
+    left_bdd: &Bdd,
+    right_bdd: &Bdd,
+    task_cache: &mut TaskCache,
+    node_cache: &mut PartialNodeCache,
+) -> usize {
     let variable_count = max(left_bdd.variable_count(), right_bdd.variable_count());
     let larger_size = max(left_bdd.node_count(), right_bdd.node_count());
 

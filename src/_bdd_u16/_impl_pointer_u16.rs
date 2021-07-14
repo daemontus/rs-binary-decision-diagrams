@@ -1,5 +1,5 @@
 use crate::_bdd_u16::PointerU16;
-use crate::{Pointer, Bdd, Variable};
+use crate::{Bdd, Pointer, Variable};
 
 impl PointerU16 {
     pub const ZERO: PointerU16 = PointerU16(0);
@@ -42,7 +42,6 @@ impl Into<usize> for PointerU16 {
 }
 
 impl Pointer {
-
     /// Convert this pointer to its `u16` version. The pointer must not be undefined.
     ///
     /// The validity of the conversion is only checked in debug mode!
@@ -51,5 +50,4 @@ impl Pointer {
         debug_assert!(self.0 < u32::from(u16::MAX));
         PointerU16(self.0 as u16)
     }
-
 }

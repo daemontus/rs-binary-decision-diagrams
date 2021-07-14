@@ -1,8 +1,8 @@
-use crate::{Bdd, Pointer, PointerPair, SEED64, Variable};
+use crate::_bdd_u32::PartialNodeCache;
+use crate::{Bdd, Pointer, PointerPair, Variable, SEED64};
 use std::cmp::{max, min};
 use std::num::NonZeroU64;
-use std::ops::{Shl, Rem, Not, Shr};
-use crate::_bdd_u32::PartialNodeCache;
+use std::ops::{Not, Rem, Shl, Shr};
 use std::process::exit;
 
 pub struct TaskCache {
@@ -12,7 +12,6 @@ pub struct TaskCache {
 }
 
 impl TaskCache {
-
     pub fn new(capacity: usize) -> TaskCache {
         TaskCache {
             capacity: NonZeroU64::new(capacity as u64).unwrap(),
@@ -48,7 +47,6 @@ impl TaskCache {
     pub fn hash(&self, pointers: PointerPair) -> usize {
         pointers.0.wrapping_mul(SEED64).rem(self.capacity) as usize
     }
-
 }
 
 const CHILD_BIT_MASK: u64 = 1u64 << 32;
@@ -72,15 +70,17 @@ pub struct UnrolledStack {
 }
 
 impl UnrolledStack {
-
     pub fn new(capacity: usize) -> UnrolledStack {
         UnrolledStack {
             index_after_top: 0,
-            items: vec![Task {
-                input: (Pointer::zero(), Pointer::zero()),
-                output: (Pointer::zero(), Pointer::zero()),
-                parent: 0,
-            }; capacity],
+            items: vec![
+                Task {
+                    input: (Pointer::zero(), Pointer::zero()),
+                    output: (Pointer::zero(), Pointer::zero()),
+                    parent: 0,
+                };
+                capacity
+            ],
         }
     }
 
@@ -95,14 +95,23 @@ impl UnrolledStack {
     }
 
     #[inline]
-    pub fn push_new_task(&mut self, input: (Pointer, Pointer), mut parent: usize, is_high_child: bool) {
+    pub fn push_new_task(
+        &mut self,
+        input: (Pointer, Pointer),
+        mut parent: usize,
+        is_high_child: bool,
+    ) {
         let mut parent = parent as u64;
         if is_high_child {
             parent = parent | CHILD_BIT_MASK;
         }
-        unsafe { *self.items.get_unchecked_mut(self.index_after_top) = Task {
-            input, output: (Pointer::undef(), Pointer::undef()), parent
-        }};
+        unsafe {
+            *self.items.get_unchecked_mut(self.index_after_top) = Task {
+                input,
+                output: (Pointer::undef(), Pointer::undef()),
+                parent,
+            }
+        };
         self.index_after_top += 1;
     }
 
@@ -118,9 +127,7 @@ impl UnrolledStack {
 
     #[inline]
     pub fn is_expanded(&self, task_id: usize) -> bool {
-        unsafe {
-            self.items.get_unchecked(task_id).parent & EXPANDED_BIT_MASK != 0
-        }
+        unsafe { self.items.get_unchecked(task_id).parent & EXPANDED_BIT_MASK != 0 }
     }
 
     #[inline]
@@ -133,27 +140,21 @@ impl UnrolledStack {
 
     #[inline]
     pub fn is_done(&self, task_id: usize) -> bool {
-        unsafe {
-            self.items.get_unchecked(task_id).parent & DONE_BIT_MASK != 0
-        }
+        unsafe { self.items.get_unchecked(task_id).parent & DONE_BIT_MASK != 0 }
     }
 
     #[inline]
     pub fn get_input(&self, task_id: usize) -> (Pointer, Pointer) {
-        unsafe {
-            self.items.get_unchecked(task_id).input
-        }
+        unsafe { self.items.get_unchecked(task_id).input }
     }
 
     #[inline]
     pub fn get_output(&self, task_id: usize) -> (Pointer, Pointer) {
-        unsafe {
-            self.items.get_unchecked(task_id).output
-        }
+        unsafe { self.items.get_unchecked(task_id).output }
     }
 
     #[inline]
-    pub fn save_result_and_mark_done(&mut self , task_id: usize, result: Pointer) {
+    pub fn save_result_and_mark_done(&mut self, task_id: usize, result: Pointer) {
         unsafe {
             let my_cell = self.items.get_unchecked_mut(task_id);
             let parent_pointer = my_cell.parent;
@@ -167,17 +168,21 @@ impl UnrolledStack {
             }
         }
     }
-
 }
 
-pub fn gen_tasks(left: &Bdd, right: &Bdd, task_cache: &mut TaskCache, stack: &mut UnrolledStack) -> usize {
+pub fn gen_tasks(
+    left: &Bdd,
+    right: &Bdd,
+    task_cache: &mut TaskCache,
+    stack: &mut UnrolledStack,
+) -> usize {
     let variable_count = max(left.variable_count(), right.variable_count());
     let larger_size = max(left.node_count(), right.node_count());
 
     let mut result = Bdd::new_true_with_variables(variable_count);
     let node_cache = &mut PartialNodeCache::new(2 * larger_size);
     let task_cache = &mut TaskCache::new(2 * larger_size);
-    let stack = &mut UnrolledStack::new(2 * usize::from(variable_count));//Vec::with_capacity(2 * usize::from(variable_count));
+    let stack = &mut UnrolledStack::new(2 * usize::from(variable_count)); //Vec::with_capacity(2 * usize::from(variable_count));
     stack.push_new_task((left.root_pointer(), right.root_pointer()), 0, false);
     //stack.reserved_push(left.root_pointer(), right.root_pointer(), 2);
 
@@ -190,7 +195,15 @@ pub fn gen_tasks(left: &Bdd, right: &Bdd, task_cache: &mut TaskCache, stack: &mu
         stack.reserve_capacity_16();
         if stack.len() > 0 {
             iteration_count += 1;
-            if step(stack.len() - 1, task_cache, node_cache, stack, &mut result, left, right) {
+            if step(
+                stack.len() - 1,
+                task_cache,
+                node_cache,
+                stack,
+                &mut result,
+                left,
+                right,
+            ) {
                 stack.pop();
             }
         } else {

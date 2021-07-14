@@ -1,25 +1,24 @@
 use crate::_bdd_u32::{CompleteTaskQueue, Task};
-use crate::{Variable, Pointer};
+use crate::{Pointer, Variable};
 
 impl CompleteTaskQueue {
-
     pub fn new_empty() -> CompleteTaskQueue {
         CompleteTaskQueue {
             list_roots: vec![0; (u16::MAX as usize)],
             tasks: {
                 let mut x = Vec::with_capacity(1024);
                 x.push(Task {
-                    dependencies: (0,0),
+                    dependencies: (0, 0),
                     result: Pointer::zero(),
                     next_task: 0,
                 });
                 x.push(Task {
-                    dependencies: (1,1),
-                    result:Pointer::one(),
+                    dependencies: (1, 1),
+                    result: Pointer::one(),
                     next_task: 1,
                 });
                 x
-            }
+            },
         }
     }
 
@@ -27,7 +26,8 @@ impl CompleteTaskQueue {
         for i_v in 0..variables {
             self.list_roots[i_v as usize] = 0;
         }
-        unsafe {    // A bit dangerous, but essentially erases all allocated tasks without freeing them (which is ok since they are all copy types anyway).
+        unsafe {
+            // A bit dangerous, but essentially erases all allocated tasks without freeing them (which is ok since they are all copy types anyway).
             self.tasks.set_len(2);
         }
     }
@@ -39,12 +39,12 @@ impl CompleteTaskQueue {
                 // Item zero and one are reserved as root tasks (plus zero also servers as list end)
                 let mut x = Vec::with_capacity(expected_capacity);
                 x.push(Task {
-                    dependencies: (0,0),
+                    dependencies: (0, 0),
                     result: Pointer::zero(),
                     next_task: 0,
                 });
                 x.push(Task {
-                    dependencies: (1,1),
+                    dependencies: (1, 1),
                     result: Pointer::one(),
                     next_task: 1,
                 });
@@ -58,7 +58,7 @@ impl CompleteTaskQueue {
         let variable = usize::from(variable.0);
         let list_root = unsafe { self.list_roots.get_unchecked_mut(variable) };
         self.tasks.push(Task {
-            dependencies: (0,0),
+            dependencies: (0, 0),
             result: Pointer::undef(),
             next_task: *list_root,
         });
@@ -85,5 +85,4 @@ impl CompleteTaskQueue {
     pub fn get(&self, index: usize) -> &Task {
         unsafe { self.tasks.get_unchecked(index) }
     }
-
 }

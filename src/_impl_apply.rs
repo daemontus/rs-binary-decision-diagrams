@@ -1,8 +1,8 @@
-use crate::{Bdd, PointerPair, Pointer, Variable};
+use crate::_impl_u8::u8_apply;
+use crate::{Bdd, Pointer, PointerPair, Variable};
+use fxhash::FxBuildHasher;
 use std::cmp::{max, min};
 use std::collections::HashMap;
-use fxhash::FxBuildHasher;
-use crate::_impl_u8::u8_apply;
 use std::ops::{Shl, Shr};
 
 static FUNCTIONS: [fn(&Bdd, &Bdd) -> Bdd; 7] = [
@@ -42,7 +42,7 @@ impl Bdd {
         //if self.node_count() <= usize::from(u8::MAX) && right.node_count() <= usize::from(u8::MAX) {
         //    u8_apply(self, right, crate::function::and_not)
         //} else {
-            //apply(self, right, crate::function::and_not)
+        //apply(self, right, crate::function::and_not)
         //}
         /*let left = self;
         let mut result = Bdd::new_true();

@@ -1,8 +1,7 @@
-use crate::_bdd_u16::{StaticTaskCache, PointerU16};
+use crate::_bdd_u16::{PointerU16, StaticTaskCache};
 use crate::SEED64;
 
 impl<const N: usize> StaticTaskCache<N> {
-
     /// Creates a new `StaticTaskCache` with the given dimensions.
     ///
     /// *Panics (in debug) if `dimension_x * dimension_y >= u16::MAX`.*
@@ -13,7 +12,7 @@ impl<const N: usize> StaticTaskCache<N> {
         StaticTaskCache {
             dimension_x,
             dimension_y,
-            table: [PointerU16::UNDEFINED; N]
+            table: [PointerU16::UNDEFINED; N],
         }
     }
 
@@ -49,5 +48,4 @@ impl<const N: usize> StaticTaskCache<N> {
         debug_assert!(usize::from(x.0) < self.dimension_x);
         debug_assert!(usize::from(y.0) < self.dimension_y);
     }
-
 }

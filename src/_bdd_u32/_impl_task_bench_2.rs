@@ -1,8 +1,8 @@
-use crate::{Bdd, Pointer, PointerPair, SEED64, Variable};
+use crate::_bdd_u32::PartialNodeCache;
+use crate::{Bdd, Pointer, PointerPair, Variable, SEED64};
 use std::cmp::{max, min};
 use std::num::NonZeroU64;
-use std::ops::{Shl, Rem, Not, Shr};
-use crate::_bdd_u32::PartialNodeCache;
+use std::ops::{Not, Rem, Shl, Shr};
 
 pub struct TaskCache {
     capacity: NonZeroU64,
@@ -11,7 +11,6 @@ pub struct TaskCache {
 }
 
 impl TaskCache {
-
     pub fn new(capacity: usize) -> TaskCache {
         TaskCache {
             capacity: NonZeroU64::new(capacity as u64).unwrap(),
@@ -53,7 +52,6 @@ impl TaskCache {
     pub fn hash(&self, pointers: PointerPair) -> usize {
         pointers.0.wrapping_mul(SEED64).rem(self.capacity) as usize
     }
-
 }
 
 pub struct UnrolledStack {
@@ -62,7 +60,6 @@ pub struct UnrolledStack {
 }
 
 impl UnrolledStack {
-
     pub fn new(capacity: usize) -> UnrolledStack {
         UnrolledStack {
             index_after_top: 0,
@@ -82,7 +79,9 @@ impl UnrolledStack {
 
     #[inline]
     pub fn reserved_push(&mut self, x: Pointer, y: Pointer, parent_task: u64) {
-        unsafe { *self.items.get_unchecked_mut(self.index_after_top) = (x, y, parent_task); }
+        unsafe {
+            *self.items.get_unchecked_mut(self.index_after_top) = (x, y, parent_task);
+        }
         self.index_after_top += 1;
     }
 
@@ -96,7 +95,6 @@ impl UnrolledStack {
         self.index_after_top -= 1;
         unsafe { *self.items.get_unchecked(self.index_after_top) }
     }
-
 }
 
 pub struct TaskQueue {
@@ -107,7 +105,6 @@ pub struct TaskQueue {
 }
 
 impl TaskQueue {
-
     pub fn new(variables: u16, capacity: usize) -> TaskQueue {
         TaskQueue {
             index_after_last: 3,
@@ -146,24 +143,31 @@ impl TaskQueue {
         let is_positive_child = (parent_task & 1) == 1;
         let parent_id = parent_task.shr(1);
         let child_id = child_id as u64;
-        let update_mask = if is_positive_child { child_id.shl(32) } else { child_id };
+        let update_mask = if is_positive_child {
+            child_id.shl(32)
+        } else {
+            child_id
+        };
         unsafe {
             let cell = self.items.get_unchecked_mut(parent_id as usize);
             *cell = *cell | update_mask;
         }
     }
-
 }
 
-
-pub fn gen_tasks(left: &Bdd, right: &Bdd, task_cache: &mut TaskCache, stack: &mut UnrolledStack) -> usize {
+pub fn gen_tasks(
+    left: &Bdd,
+    right: &Bdd,
+    task_cache: &mut TaskCache,
+    stack: &mut UnrolledStack,
+) -> usize {
     let variable_count = max(left.variable_count(), right.variable_count());
     let larger_size = max(left.node_count(), right.node_count());
 
     let task_queue = &mut TaskQueue::new(variable_count, 3 * larger_size);
     let task_cache = &mut TaskCache::new(2 * larger_size);
     //task_cache.clear();
-    let stack = &mut UnrolledStack::new(2 * usize::from(variable_count));//Vec::with_capacity(2 * usize::from(variable_count));
+    let stack = &mut UnrolledStack::new(2 * usize::from(variable_count)); //Vec::with_capacity(2 * usize::from(variable_count));
     stack.reserved_push(left.root_pointer(), right.root_pointer(), 2);
 
     let mut iteration_count = 0;
@@ -203,19 +207,29 @@ pub fn gen_tasks(left: &Bdd, right: &Bdd, task_cache: &mut TaskCache, stack: &mu
             let dependencies = unsafe { *task_queue.items.get_unchecked(task_index) };
             let positive_dep = dependencies.shr(32) as u32;
             let negative_dep = dependencies as u32;
-            let low_pointer = Pointer(unsafe { *task_queue.items.get_unchecked(negative_dep as usize) } as u32);
-            let high_pointer = Pointer(unsafe { *task_queue.items.get_unchecked(positive_dep as usize) } as u32);
+            let low_pointer =
+                Pointer(unsafe { *task_queue.items.get_unchecked(negative_dep as usize) } as u32);
+            let high_pointer =
+                Pointer(unsafe { *task_queue.items.get_unchecked(positive_dep as usize) } as u32);
             let cached_node = node_cache.read(Variable(v), low_pointer | high_pointer, &result);
             if !cached_node.is_undef() {
-                unsafe  { *task_queue.items.get_unchecked_mut(task_index) = cached_node.0 as u64; }
+                unsafe {
+                    *task_queue.items.get_unchecked_mut(task_index) = cached_node.0 as u64;
+                }
             } else {
                 let node = result.create_node(
                     Variable(v),
-                    Pointer(unsafe { *task_queue.items.get_unchecked(negative_dep as usize) } as u32),
-                    Pointer(unsafe { *task_queue.items.get_unchecked(positive_dep as usize) } as u32),
+                    Pointer(
+                        unsafe { *task_queue.items.get_unchecked(negative_dep as usize) } as u32,
+                    ),
+                    Pointer(
+                        unsafe { *task_queue.items.get_unchecked(positive_dep as usize) } as u32,
+                    ),
                 );
                 node_cache.write(Variable(v), low_pointer | high_pointer, node);
-                unsafe  { *task_queue.items.get_unchecked_mut(task_index) = node.0 as u64; }
+                unsafe {
+                    *task_queue.items.get_unchecked_mut(task_index) = node.0 as u64;
+                }
             }
             iteration_count -= 1;
             task_id = unsafe { *task_queue.successors.get_unchecked(task_index) };
@@ -279,7 +293,6 @@ fn expand_task(
         right.pointers_of(r).unpack()
     };
 
-
     let parent_id = (new_task_id as u64).shl(1);
     stack.reserved_push(l_low, r_low, parent_id);
     stack.reserved_push(l_high, r_high, parent_id + 1);
@@ -296,15 +309,15 @@ fn expand_task(
         let high_ref: *const u32 = task_cache.values.get_unchecked(hash_high);
         std::arch::x86_64::_mm_prefetch::<3>(low_ref as (*const i8));
         std::arch::x86_64::_mm_prefetch::<3>(high_ref as (*const i8));
-/*
-        let pointer: *const u64 = &left.nodes.get_unchecked(l_low.0 as usize).0;
-        std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
-        let pointer: *const u64 = &left.node_pointers.get_unchecked(l_high.0 as usize).0;
-        std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
-        let pointer: *const u64 = &right.node_pointers.get_unchecked(r_low.0 as usize).0;
-        std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
-        let pointer: *const u64 = &right.node_pointers.get_unchecked(r_high.0 as usize).0;
-        std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
- */
+        /*
+               let pointer: *const u64 = &left.nodes.get_unchecked(l_low.0 as usize).0;
+               std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
+               let pointer: *const u64 = &left.node_pointers.get_unchecked(l_high.0 as usize).0;
+               std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
+               let pointer: *const u64 = &right.node_pointers.get_unchecked(r_low.0 as usize).0;
+               std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
+               let pointer: *const u64 = &right.node_pointers.get_unchecked(r_high.0 as usize).0;
+               std::arch::x86_64::_mm_prefetch::<3>(pointer as (*const i8));
+        */
     }
 }

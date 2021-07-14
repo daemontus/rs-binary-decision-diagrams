@@ -1,7 +1,7 @@
-use crate::v2::{Bdd, NodeId, VariableId, BddNode};
+use crate::v2::{Bdd, BddNode, NodeId, VariableId};
 use std::cmp::{max, min};
 use std::num::NonZeroU64;
-use std::ops::{Shl, BitXor, Rem};
+use std::ops::{BitXor, Rem, Shl};
 
 /// **(internal)** A stack keeps track of tasks that still need to be completed or the result of
 /// which has not been used yet. Each entry has either two valid left/right `NodeId` pointers,
@@ -13,11 +13,10 @@ use std::ops::{Shl, BitXor, Rem};
 /// is a result as well and we can finish the task that spawned them.
 struct Stack {
     index_after_last: usize,
-    items: Vec<(NodeId, NodeId)>
+    items: Vec<(NodeId, NodeId)>,
 }
 
 impl Stack {
-
     /// Create a new stack with a sufficient capacity for a "coupled DFS" over `Bdds` with
     /// depth bounded by `variable_count`.
     pub fn new(variable_count: u16) -> Stack {
@@ -26,7 +25,7 @@ impl Stack {
             index_after_last: 1,
             // In a standard "coupled DFS" algorithm, the stack can never be larger than
             // 2 * the number of variables in the Bdd.
-            items: vec![(NodeId::ZERO, NodeId::ZERO); 2 * variable_count + 2]
+            items: vec![(NodeId::ZERO, NodeId::ZERO); 2 * variable_count + 2],
         };
         // A "fake" first entry ensures that even when the last task finishes, we can safely
         // check the predecessor. It does not count into the length of the stack.
@@ -54,7 +53,12 @@ impl Stack {
     #[inline]
     pub fn has_result(&self) -> bool {
         debug_assert!(self.index_after_last > 1);
-        unsafe { self.items.get_unchecked(self.index_after_last - 1).0.is_undefined() }
+        unsafe {
+            self.items
+                .get_unchecked(self.index_after_last - 1)
+                .0
+                .is_undefined()
+        }
     }
 
     /// Pop an entry off the stack, interpreting it as a result id.
@@ -65,9 +69,9 @@ impl Stack {
         debug_assert!(self.index_after_last > 2);
         self.index_after_last -= 2;
         unsafe {
-            let y = self.items.get_unchecked(self.index_after_last+1).1;
+            let y = self.items.get_unchecked(self.index_after_last + 1).1;
             let x = self.items.get_unchecked(self.index_after_last).1;
-            (x,y)
+            (x, y)
         }
     }
 
@@ -87,17 +91,27 @@ impl Stack {
         debug_assert!(self.index_after_last >= 2);
         // This operation is safe because we have that dummy first entry that gets accessed here.
         let before_top = unsafe { self.items.get_unchecked_mut(self.index_after_last - 2) };
-        if before_top.0.is_undefined() {    // entry[-2] is also a result - just replace the top
-            unsafe { *self.items.get_unchecked_mut(self.index_after_last - 1) = (NodeId::UNDEFINED, result); }
+        //let swap_on_top = *before_top;
+        //*before_top = (NodeId::UNDEFINED, result);
+        //unsafe { *self.items.get_unchecked_mut(self.index_after_last - 1) = swap_on_top; }
+        //swap_on_top.0.is_undefined()
+        if before_top.0.is_undefined() {
+            // entry[-2] is also a result - just replace the top
+            unsafe {
+                *self.items.get_unchecked_mut(self.index_after_last - 1) =
+                    (NodeId::UNDEFINED, result);
+            }
             true
-        } else {                            // entry[-2] is a task - swap it on top
+        } else {
+            // entry[-2] is a task - swap it on top
             let swap_on_top = *before_top;
             *before_top = (NodeId::UNDEFINED, result);
-            unsafe { *self.items.get_unchecked_mut(self.index_after_last - 1) = swap_on_top; }
+            unsafe {
+                *self.items.get_unchecked_mut(self.index_after_last - 1) = swap_on_top;
+            }
             false
         }
     }
-
 }
 
 /// **(internal)** A partial hash map which handles uniqueness queries for the nodes of a `Bdd`.
@@ -108,7 +122,7 @@ impl Stack {
 /// value.
 struct NodeCache {
     capacity: NonZeroU64,
-    values: Vec<NodeId>
+    values: Vec<NodeId>,
 }
 
 impl NodeCache {
@@ -123,7 +137,13 @@ impl NodeCache {
     }
 
     #[inline]
-    pub fn ensure(&mut self, keys: &mut Bdd, variable: VariableId, low: NodeId, high: NodeId) -> NodeId {
+    pub fn ensure(
+        &mut self,
+        keys: &mut Bdd,
+        variable: VariableId,
+        low: NodeId,
+        high: NodeId,
+    ) -> NodeId {
         let index = self.hash(low, high);
         unsafe {
             let entry = unsafe { self.values.get_unchecked_mut(index) };
@@ -157,7 +177,6 @@ impl NodeCache {
         let right = high.0.wrapping_mul(Self::SEED);
         left.bitxor(right).rem(self.capacity) as usize
     }
-
 }
 
 /// **(internal)** A partial hash map which saves the results of already processed tasks.
@@ -209,12 +228,14 @@ impl TaskCache {
 
     #[inline]
     pub fn prefetch(&self, left: NodeId, right: NodeId) {
-        let index = self.hash(left, right);
-        unsafe {
-            let key: *const (NodeId, NodeId) = self.keys.get_unchecked(index);
-            let value: *const (NodeId) = self.values.get_unchecked(index);
-            std::arch::x86_64::_mm_prefetch::<3>(key as *const i8);
-            std::arch::x86_64::_mm_prefetch::<3>(value as *const i8);
+        if cfg!(target_arch = "x86_64") {
+            let index = self.hash(left, right);
+            unsafe {
+                let key: *const (NodeId, NodeId) = self.keys.get_unchecked(index);
+                let value: *const (NodeId) = self.values.get_unchecked(index);
+                std::arch::x86_64::_mm_prefetch::<3>(key as *const i8);
+                std::arch::x86_64::_mm_prefetch::<3>(value as *const i8);
+            }
         }
     }
 
@@ -224,10 +245,108 @@ impl TaskCache {
         let right = right.0.wrapping_mul(Self::SEED);
         left.bitxor(right).rem(self.capacity) as usize
     }
+}
 
+macro_rules! generic_apply {
+    ($left:ident, $right:ident, $zero:expr, $one:expr) => {{
+        let left_bdd = $left;
+        let right_bdd = $right;
+        let variables = max(left_bdd.variable_count(), right_bdd.variable_count());
+        let expected_size = max(left_bdd.node_count(), right_bdd.node_count());
+
+        let mut result = Bdd::new_with_capacity(variables, expected_size);
+        let mut is_false = true;
+
+        let mut node_cache = NodeCache::new(expected_size);
+        let mut task_cache = TaskCache::new(expected_size);
+        let mut stack = Stack::new(variables);
+        stack.push_task(left_bdd.root_node(), right_bdd.root_node());
+
+        loop {
+            // If the top is a result, go straight to finishing a task. If not, first expand,
+            // but if the result of the expansion is a finished task, then also finish a task.
+            let mut finish_task = stack.has_result();
+
+            if !finish_task {
+                // Expand current top task.
+                let (left, right) = stack.peek_as_task();
+
+                if $zero(left, right) {
+                    finish_task = finish_task || stack.save_result(NodeId::ZERO);
+                } else if $one(left, right) {
+                    is_false = false;
+                    finish_task = finish_task || stack.save_result(NodeId::ONE);
+                } else {
+                    let cached_node = task_cache.read(left, right);
+                    if !cached_node.is_undefined() {
+                        finish_task = finish_task || stack.save_result(cached_node);
+                    } else {
+                        let (left_var, left_low, left_high) = left_bdd.get_node(left).unpack();
+                        let (right_var, right_low, right_high) = right_bdd.get_node(right).unpack();
+                        //left_bdd.prefetch(left_low);
+                        //right_bdd.prefetch(right_low);
+
+                        let decision_variable = min(left_var, right_var);
+
+                        let (left_low, left_high) = if decision_variable == left_var {
+                            (left_low, left_high)
+                        } else {
+                            (left, left)
+                        };
+
+                        let (right_low, right_high) = if decision_variable == right_var {
+                            (right_low, right_high)
+                        } else {
+                            (right, right)
+                        };
+
+                        task_cache.prefetch(left_high, right_high);
+
+                        // When completed, the order of tasks will be swapped (high on top).
+                        stack.push_task(left_high, right_high);
+                        stack.push_task(left_low, right_low);
+                    }
+                }
+            }
+
+            if finish_task {
+                // Finish current top task.
+                let (low, high) = stack.pop_results(&task_cache);
+                //let (high, low) = stack.pop_results(&task_cache);
+                let (left, right) = stack.peek_as_task();
+
+                if high == low {
+                    task_cache.write(left, right, low);
+                    stack.save_result(low);
+                } else {
+                    let (left_var, right_var) =
+                        (left_bdd.get_variable(left), right_bdd.get_variable(right));
+                    let decision_variable = min(left_var, right_var);
+
+                    let result_id = node_cache.ensure(&mut result, decision_variable, low, high);
+                    task_cache.write(left, right, result_id);
+                    stack.save_result(result_id);
+                }
+            }
+
+            if stack.has_one_entry() {
+                break; // The last entry is the result to the first task.
+            }
+        }
+
+        if is_false {
+            Bdd::new_false()
+        } else {
+            result
+        }
+    }};
 }
 
 pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
+    /*generic_apply!(left_bdd, right_bdd,
+        |left: NodeId, right: NodeId| (left.is_zero() || right.is_one()),
+        |left: NodeId, right: NodeId| (left.is_one() && right.is_zero())
+    )*/
     let variables = max(left_bdd.variable_count(), right_bdd.variable_count());
     let expected_size = max(left_bdd.node_count(), right_bdd.node_count());
 
@@ -295,7 +414,8 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                 task_cache.write(left, right, low);
                 stack.save_result(low);
             } else {
-                let (left_var, right_var) = (left_bdd.get_variable(left), right_bdd.get_variable(right));
+                let (left_var, right_var) =
+                    (left_bdd.get_variable(left), right_bdd.get_variable(right));
                 let decision_variable = min(left_var, right_var);
 
                 let result_id = node_cache.ensure(&mut result, decision_variable, low, high);
@@ -305,7 +425,7 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
         }
 
         if stack.has_one_entry() {
-            break;  // The last entry is the result to the first task.
+            break; // The last entry is the result to the first task.
         }
     }
 

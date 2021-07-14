@@ -1,5 +1,5 @@
+use crate::_bdd_u32::{CompleteTaskQueue, PartialNodeCache, PartialTaskCache};
 use crate::{Bdd, Pointer, Variable};
-use crate::_bdd_u32::{CompleteTaskQueue, PartialTaskCache, PartialNodeCache};
 use std::cmp::{max, min};
 
 pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
@@ -9,7 +9,8 @@ pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
     // First, generate all the tasks
     let mut task_queue = CompleteTaskQueue::new(variable_count, 2 * larger_size);
     let mut task_cache = PartialTaskCache::new(2 * larger_size);
-    let mut task_stack = Vec::<((Pointer, Pointer), usize)>::with_capacity(2 * (variable_count as usize));
+    let mut task_stack =
+        Vec::<((Pointer, Pointer), usize)>::with_capacity(2 * (variable_count as usize));
     let mut node_cache = PartialNodeCache::new(2 * larger_size);
 
     let left_root = left.root_pointer();
@@ -20,7 +21,15 @@ pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
 
     let mut is_not_empty = false;
     while let Some(task) = task_stack.pop() {
-        expand_task(left, right, task, &mut task_queue, &mut task_cache, &mut task_stack, &mut is_not_empty);
+        expand_task(
+            left,
+            right,
+            task,
+            &mut task_queue,
+            &mut task_cache,
+            &mut task_stack,
+            &mut is_not_empty,
+        );
     }
 
     if !is_not_empty {
@@ -31,7 +40,7 @@ pub fn and_not(left: &Bdd, right: &Bdd) -> Bdd {
 
     let mut result = Bdd::new_true_with_variables(variable_count);
 
-    for i_v in (root_variable.0 .. variable_count).rev() {
+    for i_v in (root_variable.0..variable_count).rev() {
         let variable = Variable(i_v);
         let mut to_process = task_queue.variable_iteration(variable);
         while to_process != 0 {
@@ -115,7 +124,6 @@ fn expand_task(
         cache.write(l_high, r_high, index);
         index
     };
-
 
     *is_not_empty = *is_not_empty || low_queue_index == 1 || high_queue_index == 1;
     queue.set_dependencies(queue_index, (low_queue_index, high_queue_index));
