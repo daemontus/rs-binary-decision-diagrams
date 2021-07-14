@@ -140,15 +140,13 @@ impl NodeCache {
     pub fn ensure(
         &mut self,
         keys: &mut Bdd,
-        variable: VariableId,
-        low: NodeId,
-        high: NodeId,
+        node: BddNode,
     ) -> NodeId {
-        let index = self.hash(low, high);
+        let index = self.hash(node.0, node.1);
         unsafe {
             let entry = unsafe { self.values.get_unchecked_mut(index) };
             let candidate = *entry;
-            let node = BddNode::pack(variable, low, high);
+            //let node = BddNode::pack(variable, low, high);
             if !candidate.is_zero() && keys.get_node(candidate) == node {
                 candidate
             } else {
@@ -161,7 +159,7 @@ impl NodeCache {
 
     #[inline]
     pub fn prefetch(&self, low: NodeId, high: NodeId) {
-        let index = self.hash(low, high);
+        let index = self.hash(low.0, high.0);
         unsafe {
             let entry: *const NodeId = self.values.get_unchecked(index);
             std::arch::x86_64::_mm_prefetch::<3>(entry as *const i8);
@@ -169,12 +167,12 @@ impl NodeCache {
     }
 
     #[inline]
-    fn hash(&self, low: NodeId, high: NodeId) -> usize {
+    fn hash(&self, low: u64, high: u64) -> usize {
         // Our hash function ignores the node variable at the moment. The reasoning is
         // that if we want to use prefetching with this cache, we need it to only depend
         // on the pointers as these are available, variable is not.
-        let left = low.0.wrapping_mul(Self::SEED);
-        let right = high.0.wrapping_mul(Self::SEED);
+        let left = low.wrapping_mul(Self::SEED);
+        let right = high.wrapping_mul(Self::SEED);
         left.bitxor(right).rem(self.capacity) as usize
     }
 }
@@ -354,7 +352,7 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     result.update_variable_count(variables);
     let mut is_false = true;
 
-    let mut node_cache = NodeCache::new(expected_size);
+    let mut node_cache = NodeCache::new(expected_size); //super::binary_operations::u48::partial_node_cache::NodeCache::new(expected_size);
     let mut task_cache = TaskCache::new(expected_size);
     let mut stack = Stack::new(variables);
     stack.push_task(left_bdd.root_node(), right_bdd.root_node());
@@ -419,7 +417,8 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                     (left_bdd.get_variable(left), right_bdd.get_variable(right));
                 let decision_variable = min(left_var, right_var);
 
-                let result_id = node_cache.ensure(&mut result, decision_variable, low, high);
+                let node = BddNode::pack(decision_variable, low, high);
+                let result_id = node_cache.ensure(&mut result, node);
                 task_cache.write(left, right, result_id);
                 stack.save_result(result_id);
             }
@@ -433,6 +432,7 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     if is_false {
         Bdd::new_false()
     } else {
+        //node_cache.export()
         result
     }
 }

@@ -8,10 +8,10 @@ use std::cmp::{max, min};
 mod coupled_dfs_stack;
 
 /// A partial task cache is an incomplete storage of task results.
-mod partial_task_cache;
+pub mod partial_task_cache;
 
 /// A partial node cache serves as incomplete storage for uniqueness resolution.
-mod partial_node_cache;
+pub mod partial_node_cache;
 
 /// A general apply algorithm for performing arbitrary binary operations on arbitrary `Bdds`.
 ///
@@ -221,7 +221,7 @@ macro_rules! apply_u48 {
 }
 
 
-#[no_mangle]
+#[inline(never)]
 pub fn and_not_u48_function(left: &Bdd, right: &Bdd) -> Bdd {
     apply_u48!(left, right,
             |l: NodeId, r: NodeId| l.is_zero() || r.is_one(),

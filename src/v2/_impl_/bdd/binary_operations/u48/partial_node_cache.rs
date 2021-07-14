@@ -10,7 +10,10 @@ use std::convert::TryFrom;
 /// in the result `Bdd`, avoiding double allocation. We also assume that `NodeId::ZERO` is never
 /// saved into the cache (since it has a static position) and thus we can use it as an undefined
 /// value to speed up initial allocation.
-pub(super) struct NodeCache {
+pub(crate) struct NodeCache {
+    /*
+        A little horror story for you:
+     */
     capacity: NonZeroU64,
     nodes: Bdd,
     // Every value is either `NodeId::ZERO` or a valid pointer into `nodes`.
@@ -59,8 +62,12 @@ impl NodeCache {
     /// check bounds when using it.
     #[inline]
     fn hash(&self, node: BddNode) -> usize {
+        //0
+        //node.0.rem(self.capacity) as usize
+        //let base = (node.0 ^ node.1).wrapping_mul(Self::SEED);
+        //base.rem(self.capacity) as usize
         let left = node.0.wrapping_mul(Self::SEED);
-        let right = node.0.wrapping_mul(Self::SEED);
+        let right = node.1.wrapping_mul(Self::SEED);
         left.bitxor(right).rem(self.capacity) as usize
     }
 }

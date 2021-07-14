@@ -42,8 +42,9 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
             //let mut node_cache = PartialNodeCache::new(326270);
             println!(
                 "Node count: {}",
-                binary_decision_diagrams::v2::_impl_::bdd::apply::and_not(&left, &right)
-                    .node_count()
+                //binary_decision_diagrams::v2::_impl_::bdd::apply::and_not(&left, &right)
+                //    .node_count()
+                left.and_not_u48(&right).node_count()
             );
             group.bench_function(/*"task-generator-326271"*/ benchmark, |b| {
                 b.iter(|| {
