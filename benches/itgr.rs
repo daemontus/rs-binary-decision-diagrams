@@ -1,4 +1,4 @@
-use binary_decision_diagrams::v2::Bdd;
+use binary_decision_diagrams::v2::{Bdd, NodeId};
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use std::convert::TryFrom;
 //use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
@@ -48,7 +48,20 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
             group.bench_function(/*"task-generator-326271"*/ benchmark, |b| {
                 b.iter(|| {
                     //gen_tasks(&left, &right, &mut task_cache, &mut node_cache)
-                    binary_decision_diagrams::v2::_impl_::bdd::apply::and_not(&left, &right)
+                    //binary_decision_diagrams::v2::_impl_::bdd::apply::and_not(&left, &right)
+                    /*binary_decision_diagrams::v2::_impl_::bdd::binary_operations::u48::apply(&left, &right, |l, r| {
+                        if l.is_zero() || r.is_one() {
+                            NodeId::ZERO
+                        } else if l.is_one() && r.is_zero() {
+                            NodeId::ONE
+                        } else {
+                            NodeId::UNDEFINED
+                        }
+                    })*/
+                    //binary_decision_diagrams::v2::_impl_::bdd::binary_operations::u48::and_not_u48_function(&left, &right);
+                    left.and_not_u48(&right)
+                    //left.and_not(&right)
+                    //left.and_not_u48(&right)
                 });
             });
         }
@@ -61,6 +74,7 @@ criterion_group!(
     config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
     targets = criterion_benchmark
 );
+
 
 //criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

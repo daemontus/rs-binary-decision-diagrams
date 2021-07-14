@@ -350,7 +350,8 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     let variables = max(left_bdd.variable_count(), right_bdd.variable_count());
     let expected_size = max(left_bdd.node_count(), right_bdd.node_count());
 
-    let mut result = Bdd::new_with_capacity(variables, expected_size);
+    let mut result = Bdd::true_with_capacity(expected_size);
+    result.update_variable_count(variables);
     let mut is_false = true;
 
     let mut node_cache = NodeCache::new(expected_size);

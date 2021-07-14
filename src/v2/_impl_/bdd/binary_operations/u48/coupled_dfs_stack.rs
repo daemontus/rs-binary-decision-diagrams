@@ -8,12 +8,13 @@ use crate::v2::NodeId;
 /// it will automatically swap with an entry underneath, if that entry is not result as well.
 /// This mechanism ensures that if the top entry is a result, we know that the entry underneath
 /// is a result as well and we can finish the task that spawned them.
-struct Stack {
+pub(super) struct Stack {
     index_after_last: usize,
     items: Vec<(NodeId, NodeId)>,
 }
 
 impl Stack {
+
     /// **(internal)** Create a new stack with a sufficient capacity for a "coupled DFS" over
     /// `Bdds` with depth bounded by `variable_count`.
     pub fn new(variable_count: u16) -> Stack {
@@ -41,9 +42,10 @@ impl Stack {
 
     /// **(internal)** Create a new task entry on the stack.
     ///
-    /// *Precondition:* The capacity of the stack is sufficient.
+    /// *Precondition:* The capacity of the stack is sufficient (should be trivially satisfied
+    /// in coupled DFS search).
     #[inline]
-    pub fn push_task(&mut self, left: NodeId, right: NodeId) {
+    pub unsafe fn push_task_unchecked(&mut self, left: NodeId, right: NodeId) {
         debug_assert!(self.index_after_last < self.items.len());
 
         unsafe { *self.items.get_unchecked_mut(self.index_after_last) = (left, right) }
@@ -52,7 +54,7 @@ impl Stack {
 
     /// **(internal)** Returns `true` if the top entry is a result.
     ///
-    /// *Precondition:* The stack is not empty.
+    /// *Precondition:* The stack is not empty, which is satisfied if items are popped correctly.
     #[inline]
     pub fn has_result(&self) -> bool {
         debug_assert!(self.index_after_last > 1);
@@ -65,7 +67,7 @@ impl Stack {
     ///
     /// *Precondition:* The two top entries exist and are results.
     #[inline]
-    pub fn pop_results(&mut self) -> (NodeId, NodeId) {
+    pub unsafe fn pop_results_unchecked(&mut self) -> (NodeId, NodeId) {
         debug_assert!(self.index_after_last > 2);
         debug_assert!(self.items[self.index_after_last - 1].0.is_undefined());
         debug_assert!(self.items[self.index_after_last - 2].0.is_undefined());
@@ -78,9 +80,11 @@ impl Stack {
 
     /// **(internal)** Get the top entry without popping it, interpreting it as a task.
     ///
-    /// *Precondition:* The top entry exists and is a task entry.
+    /// *Precondition:* The top entry exists and is a task entry. The entry existence requirement
+    /// should be satisfied if the stack is popped correctly, but the fact that the entry is
+    /// a task is not guaranteed by the stack.
     #[inline]
-    pub fn peek_as_task(&self) -> (NodeId, NodeId) {
+    pub unsafe fn peek_as_task_unchecked(&self) -> (NodeId, NodeId) {
         debug_assert!(self.index_after_last > 1);
         debug_assert!(!self.items[self.index_after_last - 1].0.is_undefined());
 
@@ -96,7 +100,7 @@ impl Stack {
     ///
     /// *Precondition:* There is at least one entry on the stack and the top entry is a task.
     #[inline]
-    pub fn save_result(&mut self, result: NodeId) -> bool {
+    pub unsafe fn save_result_unchecked(&mut self, result: NodeId) -> bool {
         debug_assert!(self.index_after_last >= 2);
         debug_assert!(!self.items[self.index_after_last - 1].0.is_undefined());
 

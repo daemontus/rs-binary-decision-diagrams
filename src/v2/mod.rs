@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{min, max};
 use std::convert::TryFrom;
 use std::ops::{Not, Shl, Shr};
 
@@ -126,9 +126,17 @@ impl NodeId {
         self.0 == 1
     }
 
-    // Return 0 if id is zero, 1 if id is one and 2 if id is anything else.
-    pub fn as_terminal(&self) -> u64 {
-        min(2, self.0)
+    /// Unsafe conversion to usize. Generally ok, but may fail on 32-bit platforms.
+    #[inline]
+    pub unsafe fn as_index_unchecked(self) -> usize {
+        self.0 as usize
+    }
+
+    /// A safe conversion to usize.
+    ///
+    /// Don't use this in performance critical code unless you really really have to.
+    pub fn as_index(self) -> usize {
+        usize::try_from(u64::from(self)).unwrap()
     }
 }
 
@@ -136,9 +144,9 @@ impl VariableId {
     pub const UNDEFINED: VariableId = VariableId(u16::MAX);
 }
 
-impl Into<u64> for NodeId {
-    fn into(self) -> u64 {
-        self.0
+impl From<NodeId> for u64 {
+    fn from(value: NodeId) -> Self {
+        value.0
     }
 }
 
@@ -159,11 +167,6 @@ impl Bdd {
         NodeId((self.nodes.len() - 1) as u64)
     }
 
-    #[inline]
-    pub(crate) fn low_link(&self, node: NodeId) -> NodeId {
-        unsafe { self.nodes.get_unchecked(node.0 as usize).low_id() }
-    }
-
     pub fn new_false() -> Bdd {
         Bdd {
             variable_count: 0,
@@ -171,9 +174,9 @@ impl Bdd {
         }
     }
 
-    pub(crate) fn new_with_capacity(variables: u16, capacity: usize) -> Bdd {
+    pub(crate) fn true_with_capacity(capacity: usize) -> Bdd {
         let mut bdd = Bdd {
-            variable_count: variables,
+            variable_count: 0,
             nodes: Vec::with_capacity(capacity),
         };
         bdd.nodes.push(BddNode::ZERO);
@@ -181,23 +184,8 @@ impl Bdd {
         bdd
     }
 
-    #[inline]
-    pub(crate) fn reserve(&mut self, nodes: usize) {
-        if self.nodes.capacity() - self.nodes.len() < nodes {
-            self.nodes.reserve(nodes);
-        }
-    }
-
-    /// Push a node that has a pre-allocated spot already.
-    #[inline]
-    pub(crate) fn push_reserved_node(&mut self, node: BddNode) -> NodeId {
-        debug_assert!(self.nodes.capacity() > self.nodes.len());
-        unsafe {
-            let index = self.nodes.len();
-            *self.nodes.get_unchecked_mut(index) = node;
-            self.nodes.set_len(index + 1);
-            NodeId(index as u64)
-        }
+    pub fn update_variable_count(&mut self, variables: u16) {
+        self.variable_count = max(self.variable_count, variables);
     }
 
     #[inline]
@@ -206,17 +194,23 @@ impl Bdd {
         self.root_node()
     }
 
-    #[inline]
     pub(crate) fn get_node(&self, id: NodeId) -> BddNode {
-        debug_assert!((id.0 as usize) < self.nodes.len());
-        unsafe { *self.nodes.get_unchecked(id.0 as usize) }
+        self.nodes[id.as_index()]
+    }
+
+    #[inline]
+    pub(crate) unsafe fn get_node_unchecked(&self, id: NodeId) -> BddNode {
+        debug_assert!(id.as_index() < self.nodes.len());
+        unsafe { *self.nodes.get_unchecked(id.as_index_unchecked()) }
     }
 
     #[inline]
     pub(crate) fn prefetch(&self, id: NodeId) {
-        unsafe {
-            let reference: *const BddNode = self.nodes.get_unchecked(id.0 as usize);
-            std::arch::x86_64::_mm_prefetch::<3>(reference as *const i8);
+        unsafe {    // Prefetch operations ignore memory errors and are therefore "externally safe".
+            if cfg!(target_arch = "x86_64") {
+                let reference: *const BddNode = self.nodes.get_unchecked(id.0 as usize);
+                std::arch::x86_64::_mm_prefetch::<3>(reference as *const i8);
+            }
         }
     }
 

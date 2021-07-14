@@ -1,7 +1,7 @@
-use binary_decision_diagrams::Bdd;
-use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
-use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
+use binary_decision_diagrams::v2::Bdd;
 use std::convert::TryFrom;
+use std::time::SystemTime;
+use binary_decision_diagrams::v2::_impl_::bdd::binary_operations::u48::and_not_u48_function;
 
 fn main() {
     let mut benchmarks = Vec::new();
@@ -28,22 +28,20 @@ fn main() {
         let size = split.next().unwrap();
         let node_count = size.parse::<usize>().unwrap();
         let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
-        let left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
+        let mut left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
+        left.sort_preorder();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
-        let right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
+        let mut right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
+        right.sort_preorder();
         if left.node_count() == 326271 {
-            let mut task_cache = TaskCache::new(326271);
-            //let mut stack = UnrolledStack::new(5000);
-            let mut node_cache = PartialNodeCache::new(2 * 326271);
-            println!(
-                "Task count: {}",
-                gen_tasks(&left, &right, &mut task_cache, &mut node_cache)
-            );
             let mut k = 0;
+            let start = SystemTime::now();
             for _ in 0..1000 {
-                k += gen_tasks(&left, &right, &mut task_cache, &mut node_cache);
+                k += left.and_not_u48(&right).node_count();
+                //k += and_not_u48_function(&left, &right).node_count();
+                //k += gen_tasks(&left, &right, &mut task_cache, &mut node_cache);
             }
-            println!("Just for fun {}", k);
+            println!("Just for fun {} - Elapsed: {}", k, start.elapsed().unwrap().as_millis());
         }
         //println!("{} {}: {}", node_count, benchmark, result.node_count());
     }
