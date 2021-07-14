@@ -65,7 +65,7 @@ impl Stack {
     ///
     /// Note that this does not check if the top is actually a result!
     #[inline]
-    pub fn pop_results(&mut self, task_cache: &TaskCache) -> (NodeId, NodeId) {
+    pub fn pop_results(&mut self) -> (NodeId, NodeId) {
         debug_assert!(self.index_after_last > 2);
         self.index_after_last -= 2;
         unsafe {
@@ -283,8 +283,8 @@ macro_rules! generic_apply {
                     } else {
                         let (left_var, left_low, left_high) = left_bdd.get_node(left).unpack();
                         let (right_var, right_low, right_high) = right_bdd.get_node(right).unpack();
-                        //left_bdd.prefetch(left_low);
-                        //right_bdd.prefetch(right_low);
+                        left_bdd.prefetch(left_low);
+                        right_bdd.prefetch(right_low);
 
                         let decision_variable = min(left_var, right_var);
 
@@ -407,7 +407,7 @@ pub fn and_not(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
         if finish_task {
             // Finish current top task.
-            let (low, high) = stack.pop_results(&task_cache);
+            let (low, high) = stack.pop_results();
             let (left, right) = stack.peek_as_task();
 
             if high == low {

@@ -227,6 +227,7 @@ impl Bdd {
     }
 
     pub fn sort_preorder(&mut self) {
+        // Bdd sorted in pre-order is faster to iterate due to cache locality.
         let mut new_id = vec![0usize; self.nodes.len()];
         new_id[0] = 0;
         new_id[1] = 1;
