@@ -137,11 +137,7 @@ impl NodeCache {
     }
 
     #[inline]
-    pub fn ensure(
-        &mut self,
-        keys: &mut Bdd,
-        node: BddNode,
-    ) -> NodeId {
+    pub fn ensure(&mut self, keys: &mut Bdd, node: BddNode) -> NodeId {
         let index = self.hash(node.0, node.1);
         unsafe {
             let entry = unsafe { self.values.get_unchecked_mut(index) };

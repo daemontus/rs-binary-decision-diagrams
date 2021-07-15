@@ -14,7 +14,6 @@ pub(super) struct Stack {
 }
 
 impl Stack {
-
     /// **(internal)** Create a new stack with a sufficient capacity for a "coupled DFS" over
     /// `Bdds` with depth bounded by `variable_count`.
     pub fn new(variable_count: u16) -> Stack {

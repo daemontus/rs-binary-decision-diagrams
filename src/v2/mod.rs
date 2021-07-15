@@ -1,4 +1,4 @@
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::convert::TryFrom;
 use std::ops::{Not, Shl, Shr};
 
@@ -206,7 +206,8 @@ impl Bdd {
 
     #[inline]
     pub(crate) fn prefetch(&self, id: NodeId) {
-        unsafe {    // Prefetch operations ignore memory errors and are therefore "externally safe".
+        unsafe {
+            // Prefetch operations ignore memory errors and are therefore "externally safe".
             if cfg!(target_arch = "x86_64") {
                 let reference: *const BddNode = self.nodes.get_unchecked(id.0 as usize);
                 std::arch::x86_64::_mm_prefetch::<3>(reference as *const i8);
@@ -221,6 +222,9 @@ impl Bdd {
     }
 
     pub fn sort_preorder(&mut self) {
+        if self.nodes.len() < 2 {
+            return;
+        }
         // Bdd sorted in pre-order is faster to iterate due to cache locality.
         let mut new_id = vec![0usize; self.nodes.len()];
         new_id[0] = 0;
@@ -250,7 +254,8 @@ impl Bdd {
             let (var, old_low, old_high) = self.nodes[old_index].unpack();
             let new_low = new_id[old_low.0 as usize];
             let new_high = new_id[old_high.0 as usize];
-            new_nodes[new_index] = BddNode::pack(var, NodeId(new_low as u64), NodeId(new_high as u64));
+            new_nodes[new_index] =
+                BddNode::pack(var, NodeId(new_low as u64), NodeId(new_high as u64));
         }
 
         self.nodes = new_nodes;

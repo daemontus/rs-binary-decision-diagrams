@@ -1,7 +1,7 @@
-use std::num::NonZeroU64;
-use crate::v2::{NodeId, Bdd, VariableId, BddNode};
-use std::ops::{BitXor, Rem};
+use crate::v2::{Bdd, BddNode, NodeId, VariableId};
 use std::convert::TryFrom;
+use std::num::NonZeroU64;
+use std::ops::{BitXor, Rem};
 
 /// **(internal)** A partial hash map which handles uniqueness queries for the nodes of a `Bdd`.
 /// It owns the result `Bdd` into which all the nodes are stored (without leaking).
@@ -12,8 +12,13 @@ use std::convert::TryFrom;
 /// value to speed up initial allocation.
 pub(crate) struct NodeCache {
     /*
-        A little horror story for you:
-     */
+       A little horror story for you: For some reason, if you try to keep `nodes`
+       outside of this struct (have it as an object in the main procedure), the
+       compiler has a little fit and the whole thing becomes slower. Not sure why,
+       maybe it has something to do with caches, or maybe the reduced number of
+       arguments to `ensure` lessens the register pressure. Who knows. Just beware
+       and measure if you want to optimize something.
+    */
     capacity: NonZeroU64,
     nodes: Bdd,
     // Every value is either `NodeId::ZERO` or a valid pointer into `nodes`.
@@ -62,10 +67,6 @@ impl NodeCache {
     /// check bounds when using it.
     #[inline]
     fn hash(&self, node: BddNode) -> usize {
-        //0
-        //node.0.rem(self.capacity) as usize
-        //let base = (node.0 ^ node.1).wrapping_mul(Self::SEED);
-        //base.rem(self.capacity) as usize
         let left = node.0.wrapping_mul(Self::SEED);
         let right = node.1.wrapping_mul(Self::SEED);
         left.bitxor(right).rem(self.capacity) as usize
