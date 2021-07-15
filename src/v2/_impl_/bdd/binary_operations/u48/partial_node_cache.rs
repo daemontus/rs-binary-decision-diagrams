@@ -10,7 +10,7 @@ use std::ops::{BitXor, Rem};
 /// in the result `Bdd`, avoiding double allocation. We also assume that `NodeId::ZERO` is never
 /// saved into the cache (since it has a static position) and thus we can use it as an undefined
 /// value to speed up initial allocation.
-pub(crate) struct NodeCache {
+pub struct NodeCache {
     /*
        A little horror story for you: For some reason, if you try to keep `nodes`
        outside of this struct (have it as an object in the main procedure), the

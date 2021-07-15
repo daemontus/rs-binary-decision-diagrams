@@ -11,7 +11,7 @@ mod coupled_dfs_stack;
 mod partial_task_cache;
 
 /// **(internal)** A partial node cache serves as incomplete storage for uniqueness resolution.
-mod partial_node_cache;
+pub(super) mod partial_node_cache;
 
 /// **(internal)** A general apply algorithm for performing arbitrary binary operations
 /// on arbitrary `Bdd` objects.

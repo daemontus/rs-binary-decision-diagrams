@@ -5,6 +5,10 @@ use std::ops::BitXor;
 /// **(internal)** A general `apply` algorithm suitable for any `Bdd`.
 mod u48;
 
+/// **(internal)** An `apply` algorithm designed for `Bdd` with up to `2^32 - 1`
+/// nodes. The main improvement is lower memory footprint.
+mod u32;
+
 impl Bdd {
     /// A logical conjunction of two `Bdd` objects.
     pub fn and(&self, other: &Bdd) -> Bdd {
