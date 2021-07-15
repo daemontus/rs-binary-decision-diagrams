@@ -7,6 +7,9 @@ mod u48;
 
 /// **(internal)** An `apply` algorithm designed for `Bdd` with up to `2^32 - 1`
 /// nodes. The main improvement is lower memory footprint.
+///
+/// The performance impact of this is not very drastic, but it is a nice, consistent
+/// 10-15% improvement, so why not do it.
 mod u32;
 
 impl Bdd {
