@@ -73,10 +73,12 @@ impl TaskCache {
     /// check bounds when using it.
     #[inline]
     fn hashed_index(&self, left: NodeId, right: NodeId) -> usize {
-        let left = u64::from(left).wrapping_mul(Self::SEED);
-        let right = u64::from(right).wrapping_mul(Self::SEED);
+        let left_hash = u64::from(left).wrapping_mul(Self::SEED);
+        let right_hash = u64::from(right).wrapping_mul(Self::SEED);
+        let block_index = left_hash.bitxor(right_hash).rem(16384);
         // Conversion is safe because `capacity` was originally `usize`.
-        left.bitxor(right).rem(self.capacity) as usize
+        //left.bitxor(right).rem(self.capacity) as usize
+        (left.0 + block_index).rem(self.capacity) as usize
     }
 }
 
