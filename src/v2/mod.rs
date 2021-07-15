@@ -230,32 +230,49 @@ impl Bdd {
         new_id[0] = 0;
         new_id[1] = 1;
 
-        let mut stack = vec![self.root_node()];
+        let mut stack_index_after_last: usize = 0;
+        let mut stack = vec![NodeId::ZERO; 3 * usize::from(self.variable_count())];
+        unsafe {
+            *stack.get_unchecked_mut(stack_index_after_last) = self.root_node();
+            stack_index_after_last += 1;
+        }
 
         let mut new_index = self.nodes.len() - 1;
-        while let Some(top) = stack.pop() {
+        while stack_index_after_last > 0 {
+            let top = unsafe { *stack.get_unchecked(stack_index_after_last - 1) };
+            stack_index_after_last -= 1;
+
             if top.is_one() || top.is_zero() {
                 continue;
             }
 
-            let index = top.0 as usize;
-            if new_id[index] == 0 {
-                new_id[index] = new_index;
+            let index = unsafe { top.as_index_unchecked() };
+            let new_id_cell = unsafe { new_id.get_unchecked_mut(index) };
+            if *new_id_cell == 0 {
+                *new_id_cell = new_index;
                 new_index -= 1;
-                let (_, low, high) = self.get_node(top).unpack();
-                stack.push(high);
-                stack.push(low);
+                let (_, low, high) = unsafe { self.get_node_unchecked(top) }.unpack();
+                unsafe {
+                    *stack.get_unchecked_mut(stack_index_after_last) = high;
+                    *stack.get_unchecked_mut(stack_index_after_last + 1) = low;
+                    stack_index_after_last += 2;
+                }
             }
         }
 
-        let mut new_nodes = self.nodes.clone();
+        let mut new_nodes = Bdd::true_with_capacity(self.node_count()).nodes;
+        // Allocate nodes without initialization
+        unsafe { new_nodes.set_len(self.node_count()) };
         for old_index in 2..new_id.len() {
-            let new_index = new_id[old_index];
-            let (var, old_low, old_high) = self.nodes[old_index].unpack();
-            let new_low = new_id[old_low.0 as usize];
-            let new_high = new_id[old_high.0 as usize];
-            new_nodes[new_index] =
-                BddNode::pack(var, NodeId(new_low as u64), NodeId(new_high as u64));
+            let (var, old_low, old_high) = unsafe { self.nodes.get_unchecked(old_index) }.unpack();
+
+            let new_index = unsafe { *new_id.get_unchecked(old_index) };
+            let new_low = unsafe { *new_id.get_unchecked(old_low.as_index_unchecked()) };
+            let new_high = unsafe { *new_id.get_unchecked(old_high.as_index_unchecked()) };
+            unsafe {
+                let cell = new_nodes.get_unchecked_mut(new_index);
+                *cell = BddNode::pack(var, NodeId(new_low as u64), NodeId(new_high as u64));
+            }
         }
 
         self.nodes = new_nodes;
