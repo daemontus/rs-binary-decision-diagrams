@@ -52,6 +52,12 @@ pub struct NodeId(u64);
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct VariableId(u16);
 
+impl From<u16> for VariableId {
+    fn from(value: u16) -> Self {
+        VariableId(value)
+    }
+}
+
 /// A single stand-alone binary decision diagram.
 ///
 /// A `Bdd` is immutable and operations on `Bdds` always create new `Bdds`. This makes it well
@@ -182,6 +188,13 @@ impl Bdd {
         bdd.nodes.push(BddNode::ZERO);
         bdd.nodes.push(BddNode::ONE);
         bdd
+    }
+
+    pub fn new_variable(variable: VariableId) -> Bdd {
+        Bdd {
+            variable_count: variable.0 + 1,
+            nodes: vec![BddNode::ZERO, BddNode::ONE, BddNode::pack(variable, NodeId::ZERO, NodeId::ONE)]
+        }
     }
 
     pub fn update_variable_count(&mut self, variables: u16) {

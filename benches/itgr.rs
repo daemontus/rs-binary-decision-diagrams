@@ -1,13 +1,13 @@
-use binary_decision_diagrams::v2::{Bdd, NodeId};
+use binary_decision_diagrams::v2::{Bdd, NodeId, VariableId};
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use std::convert::TryFrom;
 //use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
 use criterion::measurement::WallTime;
-use criterion_perf_events::Perf;
-use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+//use criterion_perf_events::Perf;
+//use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
 //use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
-pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
+pub fn criterion_benchmark(c: &mut Criterion<WallTime>) {
     let mut benchmarks = Vec::new();
     for file in std::fs::read_dir("./bench_inputs/itgr").unwrap() {
         let file = file.unwrap();
@@ -31,12 +31,14 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
     //group.sampling_mode(SamplingMode::Flat);
     for benchmark in &benchmarks {
         let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
-        let mut left = Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
+        let mut left =
+            Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
         left.sort_preorder();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
-        let mut right = Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
+        let mut right =
+            Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
         right.sort_preorder();
-        if left.node_count() == 326271 {
+        /*if left.node_count() == 326271 {
             //let mut task_cache = TaskCache::new(326270);
             //let mut stack = UnrolledStack::new(5000);
             //let mut node_cache = PartialNodeCache::new(326270);
@@ -44,7 +46,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
                 "Node count: {}",
                 //binary_decision_diagrams::v2::_impl_::bdd::apply::and_not(&left, &right)
                 //    .node_count()
-                left.and_not_u48(&right).node_count()
+                left.and_not(&right).node_count()
             );
             group.bench_function(/*"task-generator-326271"*/ benchmark, |b| {
                 b.iter(|| {
@@ -60,22 +62,39 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
                         }
                     })*/
                     //binary_decision_diagrams::v2::_impl_::bdd::binary_operations::u48::and_not_u48_function(&left, &right);
-                    left.and_not_u48(&right)
-                    //left.and_not(&right)
+                    //left.and_not_u48(&right)
+                    left.and_not(&right)
                     //left.and_not_u48(&right)
                 });
             });
-        }
+        }*/
     }
+
+    let num_vars = 32;
+    group.bench_function(format!("ripple-carry-adder-{}", num_vars).as_str(), |b| {
+        b.iter(|| {
+            let mut result = Bdd::new_false();
+            for x in 0..(num_vars / 2) {
+                let x1 = Bdd::new_variable(VariableId::from(x as u16));
+                let x2 = Bdd::new_variable(VariableId::from((x + num_vars / 2) as u16));
+                //result = bdd!(result | (x1 & x2));
+                result = result.or(&x1.and(&x2));
+                result.sort_preorder();
+            }
+            //println!("Result size: {}", result.node_count());
+            result
+        })
+    });
     group.finish();
 }
 
+/*
 criterion_group!(
     name = benches;
     config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
     targets = criterion_benchmark
 );
+*/
 
-
-//criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
