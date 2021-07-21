@@ -108,7 +108,7 @@ impl TaskCache {
             let index = self.hashed_index(left, right);
             unsafe {
                 let key: *const (NodeId, NodeId) = self.keys.get_unchecked(index);
-                let value: *const (NodeId) = self.values.get_unchecked(index);
+                let value: *const NodeId = self.values.get_unchecked(index);
                 std::arch::x86_64::_mm_prefetch::<3>(key as *const i8);
                 std::arch::x86_64::_mm_prefetch::<3>(value as *const i8);
             }

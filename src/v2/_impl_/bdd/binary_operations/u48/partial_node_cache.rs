@@ -1,4 +1,4 @@
-use crate::v2::{Bdd, BddNode, NodeId, VariableId};
+use crate::v2::{Bdd, BddNode, NodeId};
 use std::convert::TryFrom;
 use std::num::NonZeroU64;
 use std::ops::{BitXor, Rem};

@@ -1,6 +1,4 @@
 use crate::v2::{Bdd, NodeId};
-use std::cmp::max;
-use std::ops::BitXor;
 
 /// **(internal)** A general `apply` algorithm suitable for any `Bdd`.
 mod u48;

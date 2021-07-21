@@ -1,6 +1,6 @@
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::convert::TryFrom;
-use std::ops::{Not, Shl, Shr};
+use std::ops::{Shl, Shr};
 
 /*
    Design philosophy: There is the `Bdd` object representing a stand-alone `Bdd`, and then there
@@ -106,10 +106,6 @@ impl BddNode {
         BddNode(x, high.0)
     }
 
-    #[inline]
-    pub(crate) fn low_id(self) -> NodeId {
-        NodeId(self.0 & Self::ID_MASK)
-    }
 }
 
 impl NodeId {
@@ -341,8 +337,8 @@ impl TryFrom<&str> for Bdd {
             ));
         }
         Ok(Bdd {
+            variable_count: nodes[0].unpack().0.0,
             nodes,
-            variable_count: 98,
         })
     }
 }

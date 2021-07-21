@@ -24,8 +24,6 @@ fn main() {
     for benchmark in &benchmarks {
         let mut split = benchmark.split(".");
         split.next();
-        let size = split.next().unwrap();
-        let node_count = size.parse::<usize>().unwrap();
         let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
         let mut left =
             Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();

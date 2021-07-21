@@ -24,11 +24,6 @@ impl PointerPair {
     }
 
     #[inline]
-    pub fn left_pointer(self) -> NodeId {
-        NodeId(self.0 & Self::LEFT_POINTER_MASK)
-    }
-
-    #[inline]
     pub fn is_result(&self) -> bool {
         self.0 & Self::RESULT_MASK != 0
     }

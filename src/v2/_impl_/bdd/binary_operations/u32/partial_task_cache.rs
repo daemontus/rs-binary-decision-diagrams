@@ -80,5 +80,6 @@ impl TaskCache {
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
         (left.0 + block_index).rem(self.capacity) as usize
+        //left_hash.bitxor(right_hash).rem(self.capacity) as usize
     }
 }
