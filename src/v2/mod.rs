@@ -2,6 +2,8 @@ use std::cmp::max;
 use std::convert::TryFrom;
 use std::ops::{Shl, Shr};
 
+pub mod bench_fun;
+
 /*
    Design philosophy: There is the `Bdd` object representing a stand-alone `Bdd`, and then there
    is a `BddPool` which stores (possibly) multiple `Bdds` in one buffer.
@@ -98,6 +100,16 @@ impl BddNode {
             NodeId(x & Self::ID_MASK),
             NodeId(y),
         )
+    }
+
+    #[inline]
+    pub fn high_link(&self) -> NodeId {
+        NodeId(self.1)
+    }
+
+    #[inline]
+    pub fn low_link(&self) -> NodeId {
+        NodeId(self.0 & Self::ID_MASK)
     }
 
     #[inline]
