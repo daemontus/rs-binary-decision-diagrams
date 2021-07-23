@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 //use criterion::measurement::WallTime;
 use criterion_perf_events::Perf;
 use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
-use binary_decision_diagrams::v2::bench_fun::{explore, naive_coupled_dfs, optimized_coupled_dfs};
+use binary_decision_diagrams::v2::bench_fun::{explore, apply, naive_coupled_dfs, optimized_coupled_dfs};
 use std::process::exit;
 use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
@@ -37,28 +37,29 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
     for benchmark in &benchmarks {
         let left_path = format!("./bench_inputs/reach/{}.or.left.bdd", benchmark);
         println!("Left path: {} {}", left_path, benchmark);
-        //let mut left =
-        //    Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
-        //println!("Left ready: {}", left.node_count());
-        //left.sort_preorder_safe();
+        let mut left =
+            Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
+        println!("Left ready: {}", left.node_count());
+        left.sort_preorder_safe();
         let right_path = format!("./bench_inputs/reach/{}.or.right.bdd", benchmark);
-        //let mut right =
-        //    Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
-        //println!("Right ready: {}", right.node_count());
-        //right.sort_preorder_safe();
+        let mut right =
+            Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
+        println!("Right ready: {}", right.node_count());
+        right.sort_preorder_safe();
 
-        //println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
-        //println!("Task count: {} (actual)", optimized_coupled_dfs(&left, &right));
+        println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
+        println!("Task count: {} (actual)", apply(&left, &right));
 
         //let left = LibBdd::from_string(std::fs::read_to_string(&left_path).unwrap().as_str());
         //let right = LibBdd::from_string(std::fs::read_to_string(&right_path).unwrap().as_str());
 
-        //println!("Size: {}", left.or(&right).size());
+        //println!("Size: {}", left.or(&right).node_count());
 
         group.bench_function(benchmark, |b| {
             b.iter(|| {
                 //left.or(&right)
-                //naive_coupled_dfs(&left, &right)
+                //left.or(&right)
+                apply(&left, &right)
                 //optimized_coupled_dfs(&left, &right)
                 //explore(&left)
                 //exit(128)

@@ -7,13 +7,13 @@ pub struct Bdd {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct VariableId(u16);
+pub struct VariableId(pub u16);
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct NodeId(u64);
+pub struct NodeId(pub u64);
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct BddNode(VariableId, NodeId, NodeId);
+pub struct BddNode(pub VariableId, pub NodeId, pub NodeId);
 
 impl BddNode {
     pub fn variable(&self) -> VariableId {

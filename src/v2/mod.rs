@@ -242,6 +242,51 @@ impl Bdd {
         VariableId(node.0.shr(48) as u16)
     }
 
+    pub fn sort_preorder_safe(&mut self) {
+        if self.nodes.len() < 2 {
+            return;
+        }
+
+        let mut new_id = vec![0usize; self.nodes.len()];
+        new_id[0] = 0;
+        new_id[1] = 1;
+
+        let mut stack = Vec::new();
+        stack.push(self.root_node());
+
+        let mut new_index = self.nodes.len() - 1;
+        while let Some(top) = stack.pop() {
+            if top.is_zero() || top.is_one() {
+                continue;
+            }
+
+            let current_index = unsafe { top.as_index_unchecked() };
+            if new_id[current_index] == 0 {
+                new_id[current_index] = new_index;
+                new_index -= 1;
+
+                let node = unsafe { self.get_node_unchecked(top) };
+                stack.push(node.high_link());
+                stack.push(node.low_link());
+            }
+        }
+
+        assert_eq!(new_index, 1);
+
+        let mut new_nodes = vec![BddNode::pack(VariableId(0), NodeId(0), NodeId(0)); self.node_count()];
+
+        for old_index in 0..self.node_count() {
+            let (variable, low_link, high_link) = unsafe { self.get_node_unchecked(NodeId(old_index as u64)) }.unpack();
+            let new_index = new_id[old_index];
+            let new_low = new_id[unsafe { low_link.as_index_unchecked() }];
+            let new_high = new_id[unsafe { high_link.as_index_unchecked() }];
+
+            new_nodes[new_index] = BddNode::pack(variable, NodeId(new_low as u64), NodeId(new_high as u64));
+        }
+
+        self.nodes = new_nodes;
+    }
+
     pub fn sort_preorder(&mut self) {
         if self.nodes.len() < 2 {
             return;
