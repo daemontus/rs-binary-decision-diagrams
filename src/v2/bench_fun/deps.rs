@@ -1,4 +1,6 @@
 use std::convert::TryFrom;
+use cudd_sys::{DdNode, Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_bddIthVar, Cudd_bddIte, Cudd_Ref};
+use std::os::raw::c_int;
 
 #[derive(Clone)]
 pub struct Bdd {
@@ -113,6 +115,42 @@ impl Bdd {
 
 
 impl Bdd {
+
+    pub fn move_to_cudd(&self, manager: *mut cudd_sys::DdManager) -> *mut DdNode {
+        let mut stack = Vec::with_capacity(2 * self.variable_count() as usize);
+        stack.push(self.root_node());
+
+        // This is actually not a BDD zero, but ADD/ZDD zero, so we use it as undef instead.
+        let undef = unsafe { Cudd_ReadZero(manager) };
+        let mut images: Vec<*mut DdNode> = vec![undef; self.node_count()];
+        images[0] = unsafe { Cudd_ReadLogicZero(manager) };
+        images[1] = unsafe { Cudd_ReadOne(manager) };
+
+        while let Some(top) = stack.last() {
+            let node = unsafe { self.get_node_unchecked(*top) };
+            let dd_low = images[unsafe { node.low_link().as_index_unchecked() }];
+            let dd_high = images[unsafe { node.high_link().as_index_unchecked() }];
+
+            if dd_low != undef && dd_high != undef {
+                let var_id: c_int = node.variable().0.into();
+                let dd_var = unsafe { Cudd_bddIthVar(manager, var_id) };
+                let dd_node = unsafe { Cudd_bddIte(manager, dd_var, dd_high, dd_low) };
+                unsafe { Cudd_Ref(dd_node); }
+                let index = unsafe { top.as_index_unchecked() };
+                images[index] = dd_node;
+                stack.pop();
+            } else {
+                if dd_high == undef {
+                    stack.push(node.high_link());
+                }
+                if dd_low == undef {
+                    stack.push(node.low_link())
+                }
+            }
+        }
+
+        images[self.node_count() - 1]
+    }
 
     pub fn sort_preorder_safe(&mut self) {
         if self.nodes.len() < 2 {

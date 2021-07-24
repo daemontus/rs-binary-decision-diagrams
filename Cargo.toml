@@ -9,6 +9,7 @@ fxhash = "0.2.1"
 likely_stable = "0.1.2"
 lazy_static = "1.4.0"
 biodivine-lib-bdd = "0.2.1"
+cudd-sys = { git = "https://github.com/pclewis/cudd-sys.git" }
 
 [dev-dependencies]
 criterion = "0.3.4"

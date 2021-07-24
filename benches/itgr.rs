@@ -9,6 +9,8 @@ use binary_decision_diagrams::v2::bench_fun::{explore, apply, naive_coupled_dfs,
 use std::process::exit;
 use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
+use cudd_sys::{Cudd_Init, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, Cudd_Quit, Cudd_bddOr, Cudd_DagSize, Cudd_DisableGarbageCollection};
+use criterion::measurement::Measurement;
 //use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
 pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
@@ -47,37 +49,55 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         println!("Right ready: {}", right.node_count());
         right.sort_preorder_safe();
 
-        println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
-        println!("Task count: {} (actual)", apply(&left, &right));
+        //println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
+        //println!("Task count: {} (actual)", apply(&left, &right));
 
         //let left = LibBdd::from_string(std::fs::read_to_string(&left_path).unwrap().as_str());
         //let right = LibBdd::from_string(std::fs::read_to_string(&right_path).unwrap().as_str());
 
         //println!("Size: {}", left.or(&right).node_count());
 
-        group.bench_function(benchmark, |b| {
-            b.iter(|| {
+        println!("Translating...");
+        let cudd = unsafe { Cudd_Init(0, 0, 1_000_000, 1_000_000, 0) };
+        unsafe { Cudd_DisableGarbageCollection(cudd); }
+        let dd_left = left.move_to_cudd(cudd);
+        let dd_right = right.move_to_cudd(cudd);
+        let left_nodes = unsafe { Cudd_DagSize(dd_left) };
+        println!("Nodes (left): {}", left_nodes);
+        let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles));
+        let start = measurement.start();
+        let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
+        let end = measurement.end(start);
+        let result_nodes = unsafe { Cudd_DagSize(result) };
+        println!("Instructions: {}, result: {}", end, result_nodes);
+        unsafe { Cudd_Quit(cudd); }
+
+        /*group.bench_function(benchmark, |b| {
+            println!("Translating...");
+            let cudd = unsafe { Cudd_Init(0, 0, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, 0) };
+            let dd_left = left.move_to_cudd(cudd);
+            let dd_right = right.move_to_cudd(cudd);
+            let left_nodes = unsafe { Cudd_DagSize(dd_left) };
+            println!("Nodes (left): {}", left_nodes);
+            let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions));
+            let start = measurement.start();
+            let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
+            let end = measurement.end(start);
+            let result_nodes = unsafe { Cudd_DagSize(result) };
+            println!("Instructions: {}, result: {}", end, result_nodes);
+            /*b.iter(|| {
+                unsafe {
+                    Cudd_bddOr(cudd, dd_left, dd_right)
+                }
                 //left.or(&right)
                 //left.or(&right)
-                apply(&left, &right)
+                //apply(&left, &right)
                 //optimized_coupled_dfs(&left, &right)
                 //explore(&left)
                 //exit(128)
-            })
-        });
-        /*
-        //if left.node_count() == 326271 {
-            println!(
-                "Node count: {}",
-                left.or(&right).node_count()
-            );
-            group.bench_function(benchmark, |b| {
-                b.iter(|| {
-                    left.or(&right)
-                });
-            });
-        //}
-         */
+            });*/
+            unsafe { Cudd_Quit(cudd); }
+        });*/
     }
     group.finish();
 }
