@@ -64,13 +64,13 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         let dd_right = right.move_to_cudd(cudd);
         let left_nodes = unsafe { Cudd_DagSize(dd_left) };
         println!("Nodes (left): {}", left_nodes);
-        let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions));
+        let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles));
         let start = measurement.start();
         let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
         let end = measurement.end(start);
         let result_nodes = unsafe { Cudd_DagSize(result) };
         println!("Measurement: {}, result: {}", end, result_nodes);
-        unsafe { Cudd_Quit(cudd); }
+        //unsafe { Cudd_Quit(cudd); }
 
         group.bench_function(benchmark, |b| {
             /*println!("Translating...");
@@ -96,7 +96,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
             });
         });
 
-        //unsafe { Cudd_Quit(cudd); }
+        unsafe { Cudd_Quit(cudd); }
     }
     group.finish();
 }
@@ -104,7 +104,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)));
+    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
     targets = criterion_benchmark
 );
 
