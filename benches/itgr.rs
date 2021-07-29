@@ -49,8 +49,8 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         println!("Right ready: {}", right.node_count());
         right.sort_preorder_safe();
 
-        //println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
-        //println!("Task count: {} (actual)", apply(&left, &right));
+        println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
+        println!("Node count: {} (actual)", apply(&left, &right).node_count());
 
         //let left = LibBdd::from_string(std::fs::read_to_string(&left_path).unwrap().as_str());
         //let right = LibBdd::from_string(std::fs::read_to_string(&right_path).unwrap().as_str());
@@ -64,16 +64,16 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         let dd_right = right.move_to_cudd(cudd);
         let left_nodes = unsafe { Cudd_DagSize(dd_left) };
         println!("Nodes (left): {}", left_nodes);
-        let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles));
+        let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions));
         let start = measurement.start();
         let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
         let end = measurement.end(start);
         let result_nodes = unsafe { Cudd_DagSize(result) };
-        println!("Instructions: {}, result: {}", end, result_nodes);
+        println!("Measurement: {}, result: {}", end, result_nodes);
         unsafe { Cudd_Quit(cudd); }
 
-        /*group.bench_function(benchmark, |b| {
-            println!("Translating...");
+        group.bench_function(benchmark, |b| {
+            /*println!("Translating...");
             let cudd = unsafe { Cudd_Init(0, 0, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, 0) };
             let dd_left = left.move_to_cudd(cudd);
             let dd_right = right.move_to_cudd(cudd);
@@ -84,20 +84,19 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
             let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
             let end = measurement.end(start);
             let result_nodes = unsafe { Cudd_DagSize(result) };
-            println!("Instructions: {}, result: {}", end, result_nodes);
-            /*b.iter(|| {
-                unsafe {
-                    Cudd_bddOr(cudd, dd_left, dd_right)
-                }
+            println!("Instructions: {}, result: {}", end, result_nodes);*/
+            b.iter(|| {
+                //unsafe { Cudd_bddOr(cudd, dd_left, dd_right) }
                 //left.or(&right)
                 //left.or(&right)
-                //apply(&left, &right)
+                apply(&left, &right).node_count()
                 //optimized_coupled_dfs(&left, &right)
                 //explore(&left)
                 //exit(128)
-            });*/
-            unsafe { Cudd_Quit(cudd); }
-        });*/
+            });
+        });
+
+        //unsafe { Cudd_Quit(cudd); }
     }
     group.finish();
 }

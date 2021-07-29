@@ -2,7 +2,6 @@ use crate::v2::bench_fun::deps::{Bdd, NodeId, BddNode, VariableId};
 use std::cmp::{min, max};
 use std::collections::{HashSet, HashMap};
 use fxhash::FxBuildHasher;
-use likely_stable::unlikely;
 use coupled_dfs::{TaskSet, UnsafeStack};
 use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache, NodeCache2};
 use std::ops::{BitXor, Rem};
@@ -13,7 +12,10 @@ pub mod deps;
 pub mod coupled_dfs;
 pub mod apply;
 
-pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
+const VARIABLE_MASK: u64 = (u16::MAX as u64) << 48;
+const ID_MASK: u64 = !VARIABLE_MASK;
+
+pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     let variables = left_bdd.variable_count();
     let mut stack = Stack::new(left_bdd.variable_count());
     unsafe { stack.push_task_unchecked(left_bdd.root_node(), right_bdd.root_node()); }
@@ -97,7 +99,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
             }
         }
 
-        if unlikely(stack.has_last_entry()) {
+        if stack.has_last_entry() {
             break;
         }
     }
@@ -124,10 +126,85 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
 
     //panic!("Collisions: {}", node_cache.collisions);
 
+    let mut nodes = node_cache.nodes;
+    let node_count = node_cache.index_after_last;
+
+    for (_, i) in nodes.iter_mut() {
+        *i = 0;
+    }
+    // First two entries are reserved for terminals:
+    nodes[0] = ((0,0), 0);
+    nodes[1] = ((1,1), 1);
+
+    let mut new_index = 2;
+
+    let new_root = stack.items[0].1;
+    let mut stack = Vec::with_capacity(2 * usize::from(variables));
+    unsafe { stack.set_len(stack.capacity()) };
+    stack[0] = new_root;
+    let mut index_after_last = 1;
+
+    while index_after_last > 0 {
+        index_after_last -= 1;
+        // Unpack node
+        let top = unsafe { *stack.get_unchecked(index_after_last) };
+        let node_data = unsafe { nodes.get_unchecked_mut(top.as_index_unchecked()) };
+        let (low, high) = (NodeId(node_data.0.0 & ID_MASK), NodeId(node_data.0.1));
+
+        // Save index
+        node_data.1 = new_index;
+        new_index += 1;
+
+        // Push new items on search stack
+        if !high.is_terminal() {
+            let high_node = unsafe { nodes.get_unchecked_mut(high.as_index_unchecked()) };
+            if high_node.1 == 0 {
+                unsafe {
+                    *stack.get_unchecked_mut(index_after_last) = high;
+                    index_after_last += 1;
+                }
+            }
+        }
+
+        if !low.is_terminal() {
+            let low_node = unsafe { nodes.get_unchecked_mut(low.as_index_unchecked()) };
+            if low_node.1 == 0 {
+                unsafe {
+                    *stack.get_unchecked_mut(index_after_last) = low;
+                    index_after_last += 1;
+                }
+            }
+        }
+    }
+
+    let mut new_nodes = Vec::with_capacity(node_count + 1);
+    new_nodes.push(BddNode(VariableId::UNDEFINED, NodeId::ZERO, NodeId::ZERO));
+    new_nodes.push(BddNode(VariableId::UNDEFINED, NodeId::ONE, NodeId::ONE));
+    unsafe { new_nodes.set_len(node_count) };
+
+    for i in 2..node_count {
+        let original_node = unsafe { nodes.get_unchecked(i) };
+        let variable = ((original_node.0.0 & VARIABLE_MASK) >> 48) as u16;
+        let (low, high) = (NodeId(original_node.0.0 & ID_MASK), NodeId(original_node.0.1));
+
+        let new_low_id =  unsafe { NodeId(nodes.get_unchecked(low.as_index_unchecked()).1) };
+        let new_high_id = unsafe { NodeId(nodes.get_unchecked(high.as_index_unchecked()).1) };
+
+        let my_new_id = NodeId(original_node.1);
+
+        unsafe {
+            *new_nodes.get_unchecked_mut(my_new_id.as_index_unchecked()) = BddNode(VariableId(variable), new_low_id, new_high_id);
+        }
+    }
+
+    Bdd {
+        variable_count: variables,
+        nodes: new_nodes
+    }
     //hashes.len() as u64
     //count
     //nodes.len() as u64
-    node_cache.index_after_last as u64
+    //node_cache.index_after_last as u64
 }
 
 pub fn naive_apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
@@ -236,7 +313,7 @@ pub fn optimized_coupled_dfs(left: &Bdd, right: &Bdd) -> u64 {
     let mut count = 0;
     loop {
 
-        if unlikely(stack.is_empty()) {
+        if stack.is_empty() {
             break;
         }
 

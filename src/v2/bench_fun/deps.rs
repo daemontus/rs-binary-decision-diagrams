@@ -4,8 +4,8 @@ use std::os::raw::c_int;
 
 #[derive(Clone)]
 pub struct Bdd {
-    variable_count: u16,
-    nodes: Vec<BddNode>,
+    pub variable_count: u16,
+    pub nodes: Vec<BddNode>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]

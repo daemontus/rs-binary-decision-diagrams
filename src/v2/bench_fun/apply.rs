@@ -8,7 +8,7 @@ use fxhash::hash;
 pub struct NodeCache2 {
     capacity: NonZeroU64,
     pub index_after_last: usize,
-    nodes: Vec<((u64, u64), u64)>,
+    pub nodes: Vec<((u64, u64), u64)>,
     hashes: Vec<usize>,
 }
 
