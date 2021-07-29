@@ -10,7 +10,7 @@ likely_stable = "0.1.2"
 lazy_static = "1.4.0"
 biodivine-lib-bdd = "0.2.1"
 biodivine-lib-param-bn = "0.1.0"
-cudd-sys = { git = "https://github.com/pclewis/cudd-sys.git" }
+cudd-sys = { git = "https://github.com/daemontus/cudd-sys.git" }
 
 [dev-dependencies]
 criterion = "0.3.4"
