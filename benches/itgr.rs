@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use binary_decision_diagrams::v2::bench_fun::deps::{Bdd, NodeId};
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::convert::TryFrom;

@@ -1,3 +1,5 @@
+#![allow(unused, non_snake_case)]
+
 use cudd_sys::{Cudd_Init, Cudd_bddIthVar, DdNode, DdManager, Cudd_ReadOne, Cudd_ReadLogicZero, Cudd_bddNand, Cudd_bddAnd, Cudd_bddOr, Cudd_bddXnor, Cudd_bddXor, Cudd_bddLeq, Cudd_bddIte, Cudd_Ref, Cudd_ReadZero, Cudd_Deref, Cudd_DagSize, Cudd_bddExistAbstract, Cudd_DisableGarbageCollection, Cudd_DisableReorderingReporting};
 use biodivine_lib_param_bn::{BooleanNetwork, VariableId, FnUpdate, BinaryOp};
 use std::convert::TryFrom;

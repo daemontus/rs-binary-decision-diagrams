@@ -1,9 +1,11 @@
+#![allow(unused_imports)]
+
 use crate::v2::bench_fun::deps::{Bdd, NodeId, BddNode, VariableId};
 use std::cmp::{min, max};
 use std::collections::{HashSet, HashMap};
 use fxhash::FxBuildHasher;
 use coupled_dfs::{TaskSet, UnsafeStack};
-use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache, NodeCache2};
+use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache2};
 use std::ops::{BitXor, Rem};
 use biodivine_lib_bdd::op_function::and;
 use std::num::NonZeroU64;
@@ -28,7 +30,6 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
     let mut task_cache = TaskCache::new(left_bdd.node_count(), right_bdd.node_count());
 
-    let mut count = 0;
     loop {
         let mut has_result = stack.has_result();
 
@@ -44,7 +45,6 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                 if !cached_node.is_undefined() {
                     has_result = unsafe { stack.save_result_unchecked(cached_node) };
                 } else {
-                    count += 1;
                     let left_node = unsafe { left_bdd.get_node_unchecked(left) };
                     let right_node = unsafe { right_bdd.get_node_unchecked(right) };
 

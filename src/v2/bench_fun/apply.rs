@@ -27,22 +27,6 @@ impl NodeCache2 {
     }
 
     #[inline]
-    pub fn prefetch(&self, node: &BddNode) {
-        unsafe {
-            if cfg!(target_arch = "x86_64") {
-                let index = self.hash(&node);
-                unsafe {
-                    let hash: *const usize = self.hashes.get_unchecked(index);
-                    //let key: *const (NodeId, NodeId) = self.keys.get_unchecked(index);
-                    //let value: *const NodeId = self.values.get_unchecked(index);
-                    std::arch::x86_64::_mm_prefetch::<3>(hash as *const i8);
-                    //std::arch::x86_64::_mm_prefetch::<3>(value as *const i8);
-                }
-            }
-        }
-    }
-
-    #[inline]
     pub fn ensure(&mut self, node: BddNode) -> NodeId {
         let hashed_position = self.hash(&node);
         unsafe {
@@ -97,82 +81,6 @@ impl NodeCache2 {
         }
         (base + block_index).rem(self.capacity) as usize
         //low_hash.bitxor(high_hash).rem(self.capacity) as usize
-    }
-}
-
-pub struct NodeCache {
-    pub collisions: usize,
-    capacity: NonZeroU64,
-    index_after_last: usize,
-    pub next_id: u64,
-    keys: Vec<(BddNode, NodeId, usize)>
-}
-
-impl NodeCache {
-    const HASH_BLOCK: u64 = 1 << 14;
-    const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
-
-    pub fn new(capacity: usize) -> NodeCache {
-        NodeCache {
-            collisions: 0,
-            capacity: NonZeroU64::new(u64::try_from(capacity).unwrap()).unwrap(),
-            index_after_last: capacity,
-            next_id: 2,
-            keys: vec![(BddNode(VariableId(0), NodeId(0), NodeId(0)), NodeId(0), 0); capacity + (capacity / 2)]
-        }
-    }
-
-    #[inline]
-    pub fn ensure(&mut self, node: BddNode) -> NodeId {
-        let hashed_position = self.hash(&node);
-        unsafe {
-            let mut cell = self.keys.get_unchecked_mut(hashed_position);
-            if cell.0 == node {
-                cell.1
-            } else if cell.0.links() == (NodeId::ZERO, NodeId::ZERO) {  // empty spot
-                let id = NodeId(self.next_id);
-                self.next_id += 1;
-                *cell = (node, id, usize::MAX);
-                id
-            } else {
-                //let mut i = 0;
-                //self.collisions += 1;
-                // We have a collision :(
-                let mut insert_at = cell.2;
-                loop {
-                    //i += 1;
-                    if insert_at == usize::MAX {
-                        cell.2 = self.index_after_last;
-                        cell = self.keys.get_unchecked_mut(self.index_after_last);
-                        let id = NodeId(self.next_id);
-                        self.next_id += 1;
-                        self.index_after_last += 1;
-                        *cell = (node, id, usize::MAX);
-                        //if i > 4 {
-                        //    println!("I: {}", i);
-                        //}
-                        return id;
-                    } else {
-                        cell = self.keys.get_unchecked_mut(insert_at);
-                        if cell.0 == node {
-                            return cell.1;
-                        }
-                        insert_at = cell.2;
-                    }
-                }
-            }
-        }
-    }
-
-    #[inline]
-    fn hash(&self, node: &BddNode) -> usize {
-        //(hash(node) as u64).rem(self.capacity) as usize
-        //let packed: u64 = node.low_link().0 | (node.variable().0 as u64).shl(48);
-        let low_hash = node.low_link().0.wrapping_mul(Self::SEED);
-        let high_hash = node.high_link().0.wrapping_mul(Self::SEED);
-        low_hash.bitxor(high_hash).rem(self.capacity) as usize
-        //let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
-        //(u64::from(node.low_link()) + block_index).rem(self.capacity) as usize
     }
 }
 
@@ -240,6 +148,8 @@ impl TaskCache {
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
         let block_start = u64::from(left);
         unsafe {
+            // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
+            // the pointer chasing in node cache, it only adds 5-10% in the main algorithm.
             let pointer: *const ((NodeId, NodeId), NodeId) = self.keys.get_unchecked((block_start as usize) + 128);
             std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
         }
