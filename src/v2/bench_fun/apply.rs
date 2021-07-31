@@ -234,7 +234,12 @@ impl TaskCache {
         let left_hash = u64::from(left).rotate_left(7).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
-        (u64::from(left) + block_index).rem(self.capacity) as usize
+        let block_start = u64::from(left);
+        unsafe {
+            let pointer: *const ((NodeId, NodeId), NodeId) = self.keys.get_unchecked((block_start as usize) + 32);
+            std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
+        }
+        (block_start + block_index).rem(self.capacity) as usize
     }
 }
 
