@@ -57,7 +57,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
 
         //println!("Size: {}", left.or(&right).node_count());
 
-        println!("Translating...");
+        /*println!("Translating...");
         let cudd = unsafe { Cudd_Init(0, 0, 1_000_000, 1_000_000, 0) };
         unsafe { Cudd_DisableGarbageCollection(cudd); }
         let dd_left = left.move_to_cudd(cudd);
@@ -69,7 +69,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
         let end = measurement.end(start);
         let result_nodes = unsafe { Cudd_DagSize(result) };
-        println!("Measurement: {}, result: {}", end, result_nodes);
+        println!("Measurement: {}, result: {}", end, result_nodes);*/
         //unsafe { Cudd_Quit(cudd); }
 
         group.bench_function(benchmark, |b| {
@@ -96,7 +96,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
             });
         });
 
-        unsafe { Cudd_Quit(cudd); }
+        //unsafe { Cudd_Quit(cudd); }
     }
     group.finish();
 }
