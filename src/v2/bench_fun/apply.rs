@@ -91,6 +91,10 @@ impl NodeCache2 {
         let high_hash = node.high_link().0.wrapping_mul(Self::SEED);
         let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
         let base = max(node.low_link().0, node.high_link().0);
+        unsafe {
+            let pointer: *const usize = self.hashes.get_unchecked((base as usize) + 128);
+            std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
+        }
         (base + block_index).rem(self.capacity) as usize
         //low_hash.bitxor(high_hash).rem(self.capacity) as usize
     }
@@ -236,7 +240,7 @@ impl TaskCache {
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
         let block_start = u64::from(left);
         unsafe {
-            let pointer: *const ((NodeId, NodeId), NodeId) = self.keys.get_unchecked((block_start as usize) + 32);
+            let pointer: *const ((NodeId, NodeId), NodeId) = self.keys.get_unchecked((block_start as usize) + 128);
             std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
         }
         (block_start + block_index).rem(self.capacity) as usize
