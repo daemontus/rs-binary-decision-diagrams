@@ -5,7 +5,7 @@ use std::cmp::{min, max};
 use std::collections::{HashSet, HashMap};
 use fxhash::FxBuildHasher;
 use coupled_dfs::{TaskSet, UnsafeStack};
-use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache2};
+use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache};
 use std::ops::{BitXor, Rem};
 use biodivine_lib_bdd::op_function::and;
 use std::num::NonZeroU64;
@@ -22,7 +22,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     let mut stack = Stack::new(left_bdd.variable_count());
     unsafe { stack.push_task_unchecked(left_bdd.root_node(), right_bdd.root_node()); }
 
-    let mut node_cache = NodeCache2::new(left_bdd.node_count());
+    let mut node_cache = NodeCache::new(left_bdd.node_count());
 
     //let mut nodes = Vec::with_capacity(left_bdd.node_count() + right_bdd.node_count());
     //nodes.push(BddNode(VariableId(0), NodeId::ZERO, NodeId::ZERO));

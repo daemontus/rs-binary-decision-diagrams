@@ -5,20 +5,20 @@ use std::cmp::max;
 use std::convert::TryFrom;
 use fxhash::hash;
 
-pub struct NodeCache2 {
+pub struct NodeCache {
     capacity: NonZeroU64,
     pub index_after_last: usize,
     pub nodes: Vec<((u64, u64), u64)>,
     hashes: Vec<usize>,
 }
 
-impl NodeCache2 {
+impl NodeCache {
     const HASH_BLOCK: u64 = 1 << 14;
     pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 
-    pub fn new(capacity: usize) -> NodeCache2 {
+    pub fn new(capacity: usize) -> NodeCache {
         let capacity = 2 * capacity;
-        NodeCache2 {
+        NodeCache {
             capacity: NonZeroU64::new(u64::try_from(capacity).unwrap()).unwrap(),
             index_after_last: 2,
             hashes: vec![0; capacity],
