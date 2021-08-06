@@ -147,7 +147,7 @@ impl TaskCache {
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
         //let block_start = bitwise::morton_encode_2d(u64::from(left), u64::from(right));
-        let block_start = lindel::hilbert_encode([u64::from(left_hash), u64::from(right)]);
+        let block_start = lindel::hilbert_encode([u64::from(left_hash), u64::from(right)]) as u64;
         //let block_start = u64::from(left);
         unsafe {
             // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
