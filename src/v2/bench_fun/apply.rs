@@ -88,6 +88,7 @@ impl NodeCache {
 pub struct TaskCache {
     //left_mask: u64,
     //right_mask: u64,
+    shift_bits: u32,
     capacity: NonZeroU64,
     // If we put it together like this, the compiler can do assignment/move as vector operations
     // which turns out to be super fast...
@@ -103,6 +104,7 @@ impl TaskCache {
         debug_assert!(left_size >= right_size);
         let capacity = max(left_size, right_size);
         TaskCache {
+            shift_bits: 0,
             //left_mask: u64::MAX,
             //right_mask: 0,
             capacity: NonZeroU64::new(u64::try_from(capacity).unwrap()).unwrap(),
@@ -151,10 +153,15 @@ impl TaskCache {
         let left_hash = u64::from(left).rotate_left(7).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
-        let block_start = u64::from(left);
+        //let block_start = u64::from(left);
         //let block_start = {
         //    u64::from(left).pdep(self.left_mask) | u64::from(right).pdep(self.right_mask)
         //};
+        let block_start = {
+            let bits = self.shift_bits;
+            let mask = (1u64 << bits) - 1;
+            u64::from(left).wrapping_shl(bits) | (u64::from(right) & mask)
+        };
         unsafe {
             // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
             // the pointer chasing in node cache, it only adds 5-10% in the main algorithm.
