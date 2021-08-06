@@ -90,6 +90,7 @@ pub struct TaskCache {
     //right_mask: u64,
     //shift_bits: u32,
     capacity: NonZeroU64,
+    block_size: NonZeroU64,
     // If we put it together like this, the compiler can do assignment/move as vector operations
     // which turns out to be super fast...
     keys: Vec<((NodeId, NodeId), NodeId)>,
@@ -107,6 +108,7 @@ impl TaskCache {
             //shift_bits: 0,
             //left_mask: u64::MAX,
             //right_mask: 0,
+            block_size: NonZeroU64::new(1 << 14).unwrap(),
             capacity: NonZeroU64::new(u64::try_from(capacity).unwrap()).unwrap(),
             keys: vec![((NodeId::ZERO, NodeId::ZERO), NodeId::ZERO); capacity],
             //values: vec![NodeId::ZERO; capacity],
@@ -152,7 +154,7 @@ impl TaskCache {
     fn hashed_index(&self, left: NodeId, right: NodeId) -> usize {
         let left_hash = u64::from(left).rotate_left(7).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
-        let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
+        let block_index = left_hash.bitxor(right_hash).rem(self.block_size);
         let block_start = u64::from(left);
         //let block_start = {
         //    u64::from(left).pdep(self.left_mask) | u64::from(right).pdep(self.right_mask)
