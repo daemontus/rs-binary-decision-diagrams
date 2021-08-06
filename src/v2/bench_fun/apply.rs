@@ -146,7 +146,8 @@ impl TaskCache {
         let left_hash = u64::from(left).rotate_left(7).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
-        let block_start = u64::from(left);
+        let block_start = bitwise::morton_encode_2d(u64::from(left), u64::from(right));
+        //let block_start = u64::from(left);
         unsafe {
             // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
             // the pointer chasing in node cache, it only adds 5-10% in the main algorithm.

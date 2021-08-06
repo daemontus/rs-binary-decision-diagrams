@@ -10,6 +10,8 @@ likely_stable = "0.1.2"
 lazy_static = "1.4.0"
 biodivine-lib-bdd = "0.2.1"
 biodivine-lib-param-bn = "0.1.0"
+#lindel = "0.1"
+bitwise = { git = "https://github.com/gnzlbg/bitwise.git" }
 cudd-sys = { git = "https://github.com/daemontus/cudd-sys.git" }
 
 [dev-dependencies]
