@@ -5,14 +5,19 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use std::convert::TryFrom;
 //use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
 //use criterion::measurement::WallTime;
-use criterion_perf_events::Perf;
-use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
-use binary_decision_diagrams::v2::bench_fun::{explore, apply, naive_coupled_dfs, optimized_coupled_dfs};
-use std::process::exit;
+use binary_decision_diagrams::v2::bench_fun::{
+    apply, explore, naive_coupled_dfs, optimized_coupled_dfs,
+};
 use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
-use cudd_sys::{Cudd_Init, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, Cudd_Quit, Cudd_bddOr, Cudd_DagSize, Cudd_DisableGarbageCollection};
 use criterion::measurement::Measurement;
+use criterion_perf_events::Perf;
+use cudd_sys::{
+    Cudd_DagSize, Cudd_DisableGarbageCollection, Cudd_Init, Cudd_Quit, Cudd_bddOr,
+    CUDD_CACHE_SLOTS, CUDD_UNIQUE_SLOTS,
+};
+use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+use std::process::exit;
 //use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
 pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
@@ -103,13 +108,11 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
     group.finish();
 }
 
-
 criterion_group!(
     name = benches;
     config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
     targets = criterion_benchmark
 );
-
 
 //criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

@@ -1,9 +1,9 @@
-use crate::v2::{Bdd, NodeId, BddNode};
-use std::convert::TryFrom;
-use std::cmp::{max, min};
-use crate::v2::_impl_::bdd::binary_operations::u48::partial_node_cache::NodeCache;
-use crate::v2::_impl_::bdd::binary_operations::u32::partial_task_cache::TaskCache;
 use crate::v2::_impl_::bdd::binary_operations::u32::coupled_dfs_stack::Stack;
+use crate::v2::_impl_::bdd::binary_operations::u32::partial_task_cache::TaskCache;
+use crate::v2::_impl_::bdd::binary_operations::u48::partial_node_cache::NodeCache;
+use crate::v2::{Bdd, BddNode, NodeId};
+use std::cmp::{max, min};
+use std::convert::TryFrom;
 
 /// Implementation details of the `PointerPair` struct.
 mod pointer_pair;
@@ -27,7 +27,7 @@ pub(super) const MAX_RIGHT_SIZE: u64 = MAX_LEFT_SIZE ^ (1 << 31);
 
 pub(super) fn _u32_apply<TABLE>(left_bdd: &Bdd, right_bdd: &Bdd, lookup: TABLE) -> Bdd
 where
-    TABLE: Fn(NodeId, NodeId) -> NodeId
+    TABLE: Fn(NodeId, NodeId) -> NodeId,
 {
     debug_assert!(left_bdd.node_count() < usize::try_from(MAX_LEFT_SIZE).unwrap());
     debug_assert!(right_bdd.node_count() < usize::try_from(MAX_RIGHT_SIZE).unwrap());
@@ -247,7 +247,6 @@ macro_rules! apply_u32 {
 }
 
 impl Bdd {
-
     pub(super) fn _u32_and(&self, other: &Bdd) -> Bdd {
         debug_assert!(self.node_count() >= other.node_count());
         apply_u32!(
@@ -327,5 +326,4 @@ impl Bdd {
             |l: NodeId, r: NodeId| l.is_zero() || r.is_one()
         )
     }
-
 }

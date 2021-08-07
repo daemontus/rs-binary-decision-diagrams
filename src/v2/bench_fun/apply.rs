@@ -1,9 +1,9 @@
-use crate::v2::bench_fun::deps::{NodeId, BddNode, VariableId};
-use std::num::NonZeroU64;
-use std::ops::{BitXor, Rem, Shl};
+use crate::v2::bench_fun::deps::{BddNode, NodeId, VariableId};
+use fxhash::hash;
 use std::cmp::max;
 use std::convert::TryFrom;
-use fxhash::hash;
+use std::num::NonZeroU64;
+use std::ops::{BitXor, Rem, Shl};
 //use bitintr::Pdep;
 
 pub struct NodeCache {
@@ -31,7 +31,7 @@ impl NodeCache {
     pub fn ensure(&mut self, node: BddNode) -> (NodeId, usize) {
         let hashed_position = self.hash(&node);
         unsafe {
-            let packed = ((node.1.0 | (node.0.0 as u64).shl(48u64)), node.2.0);
+            let packed = ((node.1 .0 | (node.0 .0 as u64).shl(48u64)), node.2 .0);
             let cell_index = self.hashes.get_unchecked_mut(hashed_position);
             if *cell_index == 0 {
                 // This hash was not seen before
@@ -64,13 +64,11 @@ impl NodeCache {
                         *cell = (packed, u64::MAX);
                         self.index_after_last += 1;
                         return (NodeId(insert_at), iters);
-
                     }
                 }
             }
         }
     }
-
 
     #[inline]
     fn hash(&self, node: &BddNode) -> usize {
@@ -169,13 +167,13 @@ impl TaskCache {
         unsafe {
             // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
             // the pointer chasing in node cache, it only adds 5-10% in the main algorithm.
-            let pointer: *const ((NodeId, NodeId), NodeId) = self.keys.get_unchecked((block_start as usize) + 128);
+            let pointer: *const ((NodeId, NodeId), NodeId) =
+                self.keys.get_unchecked((block_start as usize) + 128);
             std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
         }
         (block_start + block_index).rem(self.capacity) as usize
     }
 }
-
 
 pub struct Stack {
     pub index_after_last: usize,
@@ -202,7 +200,9 @@ impl Stack {
     pub unsafe fn push_result(&mut self, result: NodeId) {
         debug_assert!(self.index_after_last < self.items.len());
 
-        unsafe { *self.items.get_unchecked_mut(self.index_after_last) = (NodeId::UNDEFINED, result); }
+        unsafe {
+            *self.items.get_unchecked_mut(self.index_after_last) = (NodeId::UNDEFINED, result);
+        }
         self.index_after_last += 1;
     }
 
@@ -210,7 +210,9 @@ impl Stack {
     pub unsafe fn push_task_unchecked(&mut self, left: NodeId, right: NodeId) {
         debug_assert!(self.index_after_last < self.items.len());
 
-        unsafe { *self.items.get_unchecked_mut(self.index_after_last) = (left, right); }
+        unsafe {
+            *self.items.get_unchecked_mut(self.index_after_last) = (left, right);
+        }
         self.index_after_last += 1;
     }
 
@@ -242,7 +244,6 @@ impl Stack {
         self.index_after_last -= 1;
         unsafe { *self.items.get_unchecked(self.index_after_last) }
     }
-
 
     #[inline]
     pub unsafe fn peek_as_task_unchecked(&self) -> (NodeId, NodeId) {

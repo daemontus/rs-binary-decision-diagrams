@@ -1,10 +1,15 @@
 #![allow(unused, non_snake_case)]
 
-use cudd_sys::{Cudd_Init, Cudd_bddIthVar, DdNode, DdManager, Cudd_ReadOne, Cudd_ReadLogicZero, Cudd_bddNand, Cudd_bddAnd, Cudd_bddOr, Cudd_bddXnor, Cudd_bddXor, Cudd_bddLeq, Cudd_bddIte, Cudd_Ref, Cudd_ReadZero, Cudd_Deref, Cudd_DagSize, Cudd_bddExistAbstract, Cudd_DisableGarbageCollection, Cudd_DisableReorderingReporting};
-use biodivine_lib_param_bn::{BooleanNetwork, VariableId, FnUpdate, BinaryOp};
+use biodivine_lib_param_bn::{BinaryOp, BooleanNetwork, FnUpdate, VariableId};
+use cudd_sys::{
+    Cudd_DagSize, Cudd_Deref, Cudd_DisableGarbageCollection, Cudd_DisableReorderingReporting,
+    Cudd_Init, Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_Ref, Cudd_bddAnd,
+    Cudd_bddExistAbstract, Cudd_bddIte, Cudd_bddIthVar, Cudd_bddLeq, Cudd_bddNand, Cudd_bddOr,
+    Cudd_bddXnor, Cudd_bddXor, DdManager, DdNode,
+};
 use std::convert::TryFrom;
-use std::os::raw::c_int;
 use std::io::Read;
+use std::os::raw::c_int;
 
 fn main() {
     let mut buffer = String::new();
@@ -12,17 +17,25 @@ fn main() {
     let model = BooleanNetwork::try_from(buffer.as_str()).unwrap();
 
     let cudd: *mut DdManager = unsafe { Cudd_Init(0, 0, 1_000_000, 1_000_000, 0) };
-    unsafe { Cudd_DisableGarbageCollection(cudd); }
+    unsafe {
+        Cudd_DisableGarbageCollection(cudd);
+    }
 
-    let cudd_variables: Vec<*mut DdNode> = model.variables().map(|v| {
-        let id = usize::from(v);
-        unsafe { Cudd_bddIthVar(cudd, id as c_int) }
-    }).collect();
+    let cudd_variables: Vec<*mut DdNode> = model
+        .variables()
+        .map(|v| {
+            let id = usize::from(v);
+            unsafe { Cudd_bddIthVar(cudd, id as c_int) }
+        })
+        .collect();
 
-    let update_functions: Vec<*mut DdNode> = model.variables().map(|v| {
-        let update = model.get_update_function(v).as_ref().unwrap();
-        fn_update_to_cudd(cudd, update)
-    }).collect();
+    let update_functions: Vec<*mut DdNode> = model
+        .variables()
+        .map(|v| {
+            let update = model.get_update_function(v).as_ref().unwrap();
+            fn_update_to_cudd(cudd, update)
+        })
+        .collect();
 
     let mut universe = unsafe { Cudd_ReadOne(cudd) };
     unsafe { Cudd_Ref(universe) };
@@ -37,7 +50,12 @@ fn main() {
             let mut done = true;
 
             for i_v in 0..cudd_variables.len() {
-                let successors = successors(cudd, reachability, cudd_variables[i_v], update_functions[i_v]);
+                let successors = successors(
+                    cudd,
+                    reachability,
+                    cudd_variables[i_v],
+                    update_functions[i_v],
+                );
                 let successors = unsafe { Cudd_bddAndNot(cudd, successors, reachability) };
                 let successors = unsafe { Cudd_bddAnd(cudd, successors, universe) };
 
@@ -48,11 +66,15 @@ fn main() {
                     unsafe { Cudd_Deref(reachability) };
                     reachability = unsafe { Cudd_bddOr(cudd, successors, reachability) };
                     unsafe { Cudd_Ref(reachability) };
-                    println!("Iteration ({}), reach size: {}", i, unsafe { Cudd_DagSize(reachability) });
+                    println!("Iteration ({}), reach size: {}", i, unsafe {
+                        Cudd_DagSize(reachability)
+                    });
                 }
             }
 
-            println!("Iteration ({}), reach size: {}", i, unsafe { Cudd_DagSize(reachability) });
+            println!("Iteration ({}), reach size: {}", i, unsafe {
+                Cudd_DagSize(reachability)
+            });
 
             if done {
                 break;
@@ -66,7 +88,12 @@ fn main() {
     }
 }
 
-fn successors(cudd: *mut DdManager, set: *mut DdNode, variable: *mut DdNode, update: *mut DdNode) -> *mut DdNode {
+fn successors(
+    cudd: *mut DdManager,
+    set: *mut DdNode,
+    variable: *mut DdNode,
+    update: *mut DdNode,
+) -> *mut DdNode {
     let states_with_v = unsafe { Cudd_bddAnd(cudd, set, variable) };
     unsafe { Cudd_Ref(states_with_v) };
     let states_with_not_v = unsafe { Cudd_bddAndNot(cudd, set, variable) };
@@ -90,11 +117,19 @@ fn successors(cudd: *mut DdManager, set: *mut DdNode, variable: *mut DdNode, upd
     unsafe { Cudd_bddOr(cudd, went_up, went_down) }
 }
 
-unsafe fn Cudd_bddAndNot(cudd: *mut DdManager, left: *mut DdNode, right: *mut DdNode) -> *mut DdNode {
+unsafe fn Cudd_bddAndNot(
+    cudd: *mut DdManager,
+    left: *mut DdNode,
+    right: *mut DdNode,
+) -> *mut DdNode {
     Cudd_bddIte(cudd, right, Cudd_ReadLogicZero(cudd), left)
 }
 
-fn pick_a_vertex(cudd: *mut DdManager, variables: &Vec<*mut DdNode>, set: *mut DdNode) -> *mut DdNode {
+fn pick_a_vertex(
+    cudd: *mut DdManager,
+    variables: &Vec<*mut DdNode>,
+    set: *mut DdNode,
+) -> *mut DdNode {
     let mut candidates = set;
     unsafe { Cudd_Ref(candidates) };
     for v in variables {

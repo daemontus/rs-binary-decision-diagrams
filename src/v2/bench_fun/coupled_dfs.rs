@@ -1,8 +1,8 @@
 use crate::v2::bench_fun::deps::NodeId;
-use std::ops::{BitXor, Rem};
-use std::num::NonZeroU64;
 use std::cmp::max;
 use std::convert::TryFrom;
+use std::num::NonZeroU64;
+use std::ops::{BitXor, Rem};
 
 pub struct TaskSet {
     capacity: NonZeroU64,
@@ -43,24 +43,24 @@ impl TaskSet {
         let left_hash = u64::from(left).rotate_left(7).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);
         let block_index: u64 = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
-        let block_start: u64 = u64::from(left);// + u64::from(right).shr(10);
+        let block_start: u64 = u64::from(left); // + u64::from(right).shr(10);
         (block_start + block_index).rem(self.capacity) as usize
         //left_hash.bitxor(right_hash).rem(self.capacity) as usize
     }
-
 }
 
 pub struct UnsafeStack {
     index_after_last: usize,
-    items: Vec<(NodeId, NodeId)>
+    items: Vec<(NodeId, NodeId)>,
 }
 
 impl UnsafeStack {
-
     pub fn new(variable_count: u16) -> UnsafeStack {
         let capacity = 2 * usize::from(variable_count) + 2;
         let mut items = Vec::with_capacity(capacity);
-        unsafe { items.set_len(items.capacity()); }
+        unsafe {
+            items.set_len(items.capacity());
+        }
         UnsafeStack {
             items,
             index_after_last: 0,
@@ -89,5 +89,4 @@ impl UnsafeStack {
         self.index_after_last -= 1;
         unsafe { *self.items.get_unchecked_mut(self.index_after_last) }
     }
-
 }

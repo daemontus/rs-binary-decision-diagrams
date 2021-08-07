@@ -1,18 +1,19 @@
 #![allow(unused_imports)]
 
-use crate::v2::bench_fun::deps::{Bdd, NodeId, BddNode, VariableId};
-use std::cmp::{min, max};
-use std::collections::{HashSet, HashMap};
-use fxhash::FxBuildHasher;
-use coupled_dfs::{TaskSet, UnsafeStack};
-use crate::v2::bench_fun::apply::{Stack, TaskCache, NodeCache};
-use std::ops::{BitXor, Rem};
+use crate::v2::bench_fun::apply::{NodeCache, Stack, TaskCache};
+use crate::v2::bench_fun::deps::{Bdd, BddNode, NodeId, VariableId};
 use biodivine_lib_bdd::op_function::and;
+use coupled_dfs::{TaskSet, UnsafeStack};
+use fxhash::FxBuildHasher;
+use std::cmp::{max, min};
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
+use std::ops::{BitXor, Rem};
 
-pub mod deps;
-pub mod coupled_dfs;
 pub mod apply;
+pub mod apply2;
+pub mod coupled_dfs;
+pub mod deps;
 
 const VARIABLE_MASK: u64 = (u16::MAX as u64) << 48;
 const ID_MASK: u64 = !VARIABLE_MASK;
@@ -20,7 +21,9 @@ const ID_MASK: u64 = !VARIABLE_MASK;
 pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
     let variables = left_bdd.variable_count();
     let mut stack = Stack::new(left_bdd.variable_count());
-    unsafe { stack.push_task_unchecked(left_bdd.root_node(), right_bdd.root_node()); }
+    unsafe {
+        stack.push_task_unchecked(left_bdd.root_node(), right_bdd.root_node());
+    }
 
     let mut node_cache = NodeCache::new(left_bdd.node_count());
 
@@ -139,8 +142,8 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
         *i = 0;
     }
     // First two entries are reserved for terminals:
-    nodes[0] = ((0,0), 0);
-    nodes[1] = ((1,1), 1);
+    nodes[0] = ((0, 0), 0);
+    nodes[1] = ((1, 1), 1);
 
     let mut new_index = 2;
 
@@ -155,7 +158,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
         // Unpack node
         let top = unsafe { *stack.get_unchecked(index_after_last) };
         let node_data = unsafe { nodes.get_unchecked_mut(top.as_index_unchecked()) };
-        let (low, high) = (NodeId(node_data.0.0 & ID_MASK), NodeId(node_data.0.1));
+        let (low, high) = (NodeId(node_data.0 .0 & ID_MASK), NodeId(node_data.0 .1));
 
         // Save index
         node_data.1 = new_index;
@@ -190,22 +193,26 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
     for i in 2..node_count {
         let original_node = unsafe { nodes.get_unchecked(i) };
-        let variable = ((original_node.0.0 & VARIABLE_MASK) >> 48) as u16;
-        let (low, high) = (NodeId(original_node.0.0 & ID_MASK), NodeId(original_node.0.1));
+        let variable = ((original_node.0 .0 & VARIABLE_MASK) >> 48) as u16;
+        let (low, high) = (
+            NodeId(original_node.0 .0 & ID_MASK),
+            NodeId(original_node.0 .1),
+        );
 
-        let new_low_id =  unsafe { NodeId(nodes.get_unchecked(low.as_index_unchecked()).1) };
+        let new_low_id = unsafe { NodeId(nodes.get_unchecked(low.as_index_unchecked()).1) };
         let new_high_id = unsafe { NodeId(nodes.get_unchecked(high.as_index_unchecked()).1) };
 
         let my_new_id = NodeId(original_node.1);
 
         unsafe {
-            *new_nodes.get_unchecked_mut(my_new_id.as_index_unchecked()) = BddNode(VariableId(variable), new_low_id, new_high_id);
+            *new_nodes.get_unchecked_mut(my_new_id.as_index_unchecked()) =
+                BddNode(VariableId(variable), new_low_id, new_high_id);
         }
     }
 
     Bdd {
         variable_count: variables,
-        nodes: new_nodes
+        nodes: new_nodes,
     }
     //hashes.len() as u64
     //count
@@ -220,7 +227,8 @@ pub fn naive_apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
     result_nodes.push(BddNode(VariableId(variables), NodeId::ZERO, NodeId::ZERO));
     result_nodes.push(BddNode(VariableId(variables), NodeId::ONE, NodeId::ONE));
     //let mut is_not_false = false;
-    let mut node_cache: HashMap<BddNode, NodeId, FxBuildHasher> = HashMap::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
+    let mut node_cache: HashMap<BddNode, NodeId, FxBuildHasher> =
+        HashMap::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
     let mut task_cache = TaskCache::new(left_bdd.node_count(), right_bdd.node_count());
     let mut stack = Stack::new(variables);
     unsafe {
@@ -260,19 +268,24 @@ pub fn naive_apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
             let (left, right) = unsafe { stack.peek_as_task_unchecked() };
 
             if left.is_one() || right.is_one() {
-                unsafe { stack.save_result_unchecked(NodeId::ONE); }
+                unsafe {
+                    stack.save_result_unchecked(NodeId::ONE);
+                }
                 //is_not_false = true;
             } else if left.is_zero() && right.is_zero() {
-                unsafe { stack.save_result_unchecked(NodeId::ZERO); }
+                unsafe {
+                    stack.save_result_unchecked(NodeId::ZERO);
+                }
             } else {
                 let (cached_node, _) = task_cache.read(left, right);
                 if !cached_node.is_undefined() {
-                    unsafe { stack.save_result_unchecked(cached_node); }
+                    unsafe {
+                        stack.save_result_unchecked(cached_node);
+                    }
                 } else {
                     task_count += 1;
                     let left_node = unsafe { left_bdd.get_node_unchecked(left) };
                     let right_node = unsafe { right_bdd.get_node_unchecked(right) };
-
 
                     let decision_variable = min(left_node.variable(), right_node.variable());
 
@@ -293,8 +306,6 @@ pub fn naive_apply(left_bdd: &Bdd, right_bdd: &Bdd) -> u64 {
                         stack.push_task_unchecked(left_high, right_high);
                         stack.push_task_unchecked(left_low, right_low);
                     }
-
-
                 }
             }
         }
@@ -318,7 +329,6 @@ pub fn optimized_coupled_dfs(left: &Bdd, right: &Bdd) -> u64 {
 
     let mut count = 0;
     loop {
-
         if stack.is_empty() {
             break;
         }
@@ -344,7 +354,6 @@ pub fn optimized_coupled_dfs(left: &Bdd, right: &Bdd) -> u64 {
                 stack.push(left_pointer, right_node.high_link());
                 stack.push(left_pointer, right_node.low_link());
             }
-
 
             /*let variable = min(left_node.variable(), right_node.variable());
 
@@ -379,7 +388,10 @@ pub fn naive_coupled_dfs(left: &Bdd, right: &Bdd) -> u64 {
     let mut stack = Vec::with_capacity(stack_capacity);
     stack.push((left.root_node(), right.root_node()));
 
-    let mut expanded = HashSet::with_capacity_and_hasher(max(left.node_count(), right.node_count()), FxBuildHasher::default());
+    let mut expanded = HashSet::with_capacity_and_hasher(
+        max(left.node_count(), right.node_count()),
+        FxBuildHasher::default(),
+    );
 
     let mut count = 0;
     while let Some(top) = stack.pop() {
@@ -419,13 +431,14 @@ pub fn naive_coupled_dfs(left: &Bdd, right: &Bdd) -> u64 {
 }
 
 /// A function for demonstrating the impact of pre-order on BDD traversal.
-pub fn explore(bdd: &Bdd/*, stack: &mut Vec<NodeId>, visited: &mut Vec<bool>*/) -> u64 {
-
+pub fn explore(bdd: &Bdd /*, stack: &mut Vec<NodeId>, visited: &mut Vec<bool>*/) -> u64 {
     let stack_capacity = 2 * usize::from(bdd.variable_count()) + 2;
     let mut stack: Vec<NodeId> = Vec::with_capacity(stack_capacity);
     unsafe { stack.set_len(stack_capacity) };
     let mut index_after_top = 1;
-    unsafe { *stack.get_unchecked_mut(0) = bdd.root_node(); }
+    unsafe {
+        *stack.get_unchecked_mut(0) = bdd.root_node();
+    }
 
     let count = bdd.node_count();
     let mut visited = vec![false; count];
@@ -471,7 +484,6 @@ pub fn explore(bdd: &Bdd/*, stack: &mut Vec<NodeId>, visited: &mut Vec<bool>*/) 
             stack.push(node.low_link());
         }
     }*/
-
 
     count
 }

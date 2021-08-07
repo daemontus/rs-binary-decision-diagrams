@@ -1,5 +1,5 @@
-use crate::v2::NodeId;
 use super::PointerPair;
+use crate::v2::NodeId;
 
 impl PointerPair {
     pub const RESULT_MASK: u64 = 1 << 63;
@@ -20,7 +20,10 @@ impl PointerPair {
 
     #[inline]
     pub fn unpack(self) -> (NodeId, NodeId) {
-        (NodeId(self.0 & Self::LEFT_POINTER_MASK), NodeId(self.0 >> 32))
+        (
+            NodeId(self.0 & Self::LEFT_POINTER_MASK),
+            NodeId(self.0 >> 32),
+        )
     }
 
     #[inline]
@@ -33,7 +36,6 @@ impl PointerPair {
         debug_assert!(self.is_result());
         NodeId(self.0 ^ Self::RESULT_MASK)
     }
-
 }
 
 impl From<u64> for PointerPair {

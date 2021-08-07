@@ -117,7 +117,6 @@ impl BddNode {
         let x = u64::from(variable.0).shl(48) | low.0;
         BddNode(x, high.0)
     }
-
 }
 
 impl NodeId {
@@ -201,7 +200,11 @@ impl Bdd {
     pub fn new_variable(variable: VariableId) -> Bdd {
         Bdd {
             variable_count: variable.0 + 1,
-            nodes: vec![BddNode::ZERO, BddNode::ONE, BddNode::pack(variable, NodeId::ZERO, NodeId::ONE)]
+            nodes: vec![
+                BddNode::ZERO,
+                BddNode::ONE,
+                BddNode::pack(variable, NodeId::ZERO, NodeId::ONE),
+            ],
         }
     }
 
@@ -273,15 +276,18 @@ impl Bdd {
 
         assert_eq!(new_index, 1);
 
-        let mut new_nodes = vec![BddNode::pack(VariableId(0), NodeId(0), NodeId(0)); self.node_count()];
+        let mut new_nodes =
+            vec![BddNode::pack(VariableId(0), NodeId(0), NodeId(0)); self.node_count()];
 
         for old_index in 0..self.node_count() {
-            let (variable, low_link, high_link) = unsafe { self.get_node_unchecked(NodeId(old_index as u64)) }.unpack();
+            let (variable, low_link, high_link) =
+                unsafe { self.get_node_unchecked(NodeId(old_index as u64)) }.unpack();
             let new_index = new_id[old_index];
             let new_low = new_id[unsafe { low_link.as_index_unchecked() }];
             let new_high = new_id[unsafe { high_link.as_index_unchecked() }];
 
-            new_nodes[new_index] = BddNode::pack(variable, NodeId(new_low as u64), NodeId(new_high as u64));
+            new_nodes[new_index] =
+                BddNode::pack(variable, NodeId(new_low as u64), NodeId(new_high as u64));
         }
 
         self.nodes = new_nodes;
@@ -394,7 +400,7 @@ impl TryFrom<&str> for Bdd {
             ));
         }
         Ok(Bdd {
-            variable_count: nodes[0].unpack().0.0,
+            variable_count: nodes[0].unpack().0 .0,
             nodes,
         })
     }

@@ -1,5 +1,7 @@
+use cudd_sys::{
+    Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_Ref, Cudd_bddIte, Cudd_bddIthVar, DdNode,
+};
 use std::convert::TryFrom;
-use cudd_sys::{DdNode, Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_bddIthVar, Cudd_bddIte, Cudd_Ref};
 use std::os::raw::c_int;
 
 #[derive(Clone)]
@@ -17,6 +19,9 @@ pub struct NodeId(pub u64);
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct BddNode(pub VariableId, pub NodeId, pub NodeId);
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct PackedBddNode(pub u64, pub u64);
+
 impl BddNode {
     pub fn variable(&self) -> VariableId {
         self.0
@@ -32,6 +37,11 @@ impl BddNode {
 
     pub fn high_link(&self) -> NodeId {
         self.2
+    }
+
+    pub fn pack(self) -> PackedBddNode {
+        let packed_high = u64::from(self.2) | (u64::from(self.0 .0) << 48);
+        PackedBddNode(u64::from(self.1), packed_high)
     }
 }
 
@@ -83,7 +93,6 @@ impl NodeId {
 }
 
 impl Bdd {
-
     /*#[inline]
     pub(crate) fn prefetch(&self, id: NodeId) {
         unsafe {
@@ -113,9 +122,7 @@ impl Bdd {
     }
 }
 
-
 impl Bdd {
-
     pub fn move_to_cudd(&self, manager: *mut cudd_sys::DdManager) -> *mut DdNode {
         let mut stack = Vec::with_capacity(2 * self.variable_count() as usize);
         stack.push(self.root_node());
@@ -135,7 +142,9 @@ impl Bdd {
                 let var_id: c_int = node.variable().0.into();
                 let dd_var = unsafe { Cudd_bddIthVar(manager, var_id) };
                 let dd_node = unsafe { Cudd_bddIte(manager, dd_var, dd_high, dd_low) };
-                unsafe { Cudd_Ref(dd_node); }
+                unsafe {
+                    Cudd_Ref(dd_node);
+                }
                 let index = unsafe { top.as_index_unchecked() };
                 images[index] = dd_node;
                 stack.pop();
@@ -191,7 +200,11 @@ impl Bdd {
             let new_low = new_id[unsafe { node.low_link().as_index_unchecked() }];
             let new_high = new_id[unsafe { node.high_link().as_index_unchecked() }];
 
-            new_nodes[new_index] = BddNode(node.variable(), NodeId(new_low as u64), NodeId(new_high as u64));
+            new_nodes[new_index] = BddNode(
+                node.variable(),
+                NodeId(new_low as u64),
+                NodeId(new_high as u64),
+            );
         }
 
         self.nodes = new_nodes;
@@ -258,8 +271,6 @@ impl Bdd {
     }
 }
 
-
-
 impl TryFrom<&str> for Bdd {
     type Error = String;
 
@@ -300,11 +311,15 @@ impl TryFrom<&str> for Bdd {
                     right_pointer.unwrap()
                 ));
             };
-            nodes.push(BddNode(VariableId(variable), NodeId(low_pointer), NodeId(high_pointer)));
+            nodes.push(BddNode(
+                VariableId(variable),
+                NodeId(low_pointer),
+                NodeId(high_pointer),
+            ));
             //nodes.push(BddNode(VariableId(variable), NodeId(high_pointer), NodeId(low_pointer)));
         }
         Ok(Bdd {
-            variable_count: nodes[0].0.0,
+            variable_count: nodes[0].0 .0,
             nodes,
         })
     }

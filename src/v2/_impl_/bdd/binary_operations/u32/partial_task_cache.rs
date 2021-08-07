@@ -1,9 +1,9 @@
-use std::num::NonZeroU64;
 use crate::v2::NodeId;
 use crate::v2::_impl_::bdd::binary_operations::u32::PointerPair;
 use std::cmp::max;
 use std::convert::TryFrom;
-use std::ops::{Rem, BitXor};
+use std::num::NonZeroU64;
+use std::ops::{BitXor, Rem};
 
 /// **(internal)** Task cache based on the general `u48` version. See the original
 /// version for documentation comments.
@@ -69,12 +69,12 @@ impl TaskCache {
     #[inline]
     fn hashed_index(&self, tasks: PointerPair) -> usize {
         /*
-            For some reason, the gods of hash functions don't want us to simplify
-            this. The more-or-less viable alternative seems to be to xor the
-            left right pointer and then multiply only once, but this produces
-            a bit too many collisions for my liking (and only small perf.
-            improvement), so I'm keeping this for now and we may change it down the line.
-         */
+           For some reason, the gods of hash functions don't want us to simplify
+           this. The more-or-less viable alternative seems to be to xor the
+           left right pointer and then multiply only once, but this produces
+           a bit too many collisions for my liking (and only small perf.
+           improvement), so I'm keeping this for now and we may change it down the line.
+        */
         let (left, right) = tasks.unpack();
         let left_hash = u64::from(left).wrapping_mul(Self::SEED);
         let right_hash = u64::from(right).wrapping_mul(Self::SEED);

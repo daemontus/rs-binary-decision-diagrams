@@ -1,5 +1,5 @@
-use crate::v2::NodeId;
 use super::PointerPair;
+use crate::v2::NodeId;
 
 /// **(internal)** A 32-bit version of the `Stack` used in the general `u48` algorithm.
 /// Method documentation omitted when equivalent to the one on `u48` version.
@@ -45,7 +45,11 @@ impl Stack {
     pub fn has_result(&self) -> bool {
         debug_assert!(self.index_after_last > 1);
 
-        unsafe { self.items.get_unchecked(self.index_after_last - 1).is_result() }
+        unsafe {
+            self.items
+                .get_unchecked(self.index_after_last - 1)
+                .is_result()
+        }
     }
 
     #[inline]
