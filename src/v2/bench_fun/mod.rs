@@ -30,7 +30,10 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
     let mut task_cache = TaskCache::new(left_bdd.node_count(), right_bdd.node_count());
 
+    let mut cycles = 0usize;
+    let mut uops = 0;
     loop {
+        cycles += 1;
         let mut has_result = stack.has_result();
 
         if !has_result {
@@ -93,7 +96,8 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                 //let result_id = NodeId((nodes.len() - 1) as u64);
                 //nodes.push(node);
                 //println!("{} {}", low.0, high.0);
-                let result_id = node_cache.ensure(node);
+                let (result_id, iters) = node_cache.ensure(node);
+                uops += iters;
                 task_cache.write_at(left, right, save_at, result_id);
                 unsafe { stack.save_result_unchecked(result_id) };
             }
@@ -103,6 +107,8 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
             break;
         }
     }
+
+    println!("uOps: {}; cycles: {};", uops, cycles);
 
     /*for (i, node) in nodes.iter().enumerate() {
         if i + 10 < nodes.len() {

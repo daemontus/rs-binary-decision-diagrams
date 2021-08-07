@@ -28,7 +28,7 @@ impl NodeCache {
     }
 
     #[inline]
-    pub fn ensure(&mut self, node: BddNode) -> NodeId {
+    pub fn ensure(&mut self, node: BddNode) -> (NodeId, usize) {
         let hashed_position = self.hash(&node);
         unsafe {
             let packed = ((node.1.0 | (node.0.0 as u64).shl(48u64)), node.2.0);
@@ -40,19 +40,21 @@ impl NodeCache {
                 *cell_index = id;
                 self.index_after_last += 1;
                 *insert_at = (packed, u64::MAX);
-                return NodeId(id as u64);
+                return (NodeId(id as u64), 0);
             }
 
             let mut cell = self.nodes.get_unchecked_mut(*cell_index);
             if cell.0 == packed {
-                return NodeId(*cell_index as u64);
+                return (NodeId(*cell_index as u64), 0);
             } else {
+                let mut iters = 0;
                 let mut insert_at = cell.1;
                 loop {
+                    iters += 1;
                     if insert_at != u64::MAX {
                         cell = self.nodes.get_unchecked_mut(insert_at as usize);
                         if cell.0 == packed {
-                            return NodeId(insert_at)
+                            return (NodeId(insert_at), iters);
                         }
                         insert_at = cell.1;
                     } else {
@@ -61,7 +63,7 @@ impl NodeCache {
                         cell = self.nodes.get_unchecked_mut(insert_at as usize);
                         *cell = (packed, u64::MAX);
                         self.index_after_last += 1;
-                        return NodeId(insert_at);
+                        return (NodeId(insert_at), iters);
 
                     }
                 }
