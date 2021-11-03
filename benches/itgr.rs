@@ -12,7 +12,7 @@ use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use cudd_sys::{
+use cudd_sys::cudd::{
     Cudd_DagSize, Cudd_DisableGarbageCollection, Cudd_Init, Cudd_Quit, Cudd_bddOr,
     CUDD_CACHE_SLOTS, CUDD_UNIQUE_SLOTS,
 };

@@ -1,12 +1,13 @@
 #![allow(unused, non_snake_case)]
 
 use biodivine_lib_param_bn::{BinaryOp, BooleanNetwork, FnUpdate, VariableId};
-use cudd_sys::{
+use cudd_sys::cudd::{
     Cudd_DagSize, Cudd_Deref, Cudd_DisableGarbageCollection, Cudd_DisableReorderingReporting,
     Cudd_Init, Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_Ref, Cudd_bddAnd,
     Cudd_bddExistAbstract, Cudd_bddIte, Cudd_bddIthVar, Cudd_bddLeq, Cudd_bddNand, Cudd_bddOr,
-    Cudd_bddXnor, Cudd_bddXor, DdManager, DdNode,
+    Cudd_bddXnor, Cudd_bddXor,
 };
+use cudd_sys::{DdManager, DdNode};
 use std::convert::TryFrom;
 use std::io::Read;
 use std::os::raw::c_int;

@@ -1,6 +1,7 @@
-use cudd_sys::{
-    Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_Ref, Cudd_bddIte, Cudd_bddIthVar, DdNode,
+use cudd_sys::cudd::{
+    Cudd_ReadLogicZero, Cudd_ReadOne, Cudd_ReadZero, Cudd_Ref, Cudd_bddIte, Cudd_bddIthVar,
 };
+use cudd_sys::DdNode;
 use std::convert::TryFrom;
 use std::os::raw::c_int;
 

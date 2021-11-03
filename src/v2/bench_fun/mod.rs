@@ -14,6 +14,7 @@ pub mod apply;
 pub mod apply2;
 pub mod coupled_dfs;
 pub mod deps;
+pub mod ooo;
 
 const VARIABLE_MASK: u64 = (u16::MAX as u64) << 48;
 const ID_MASK: u64 = !VARIABLE_MASK;
