@@ -5,6 +5,38 @@ use cudd_sys::DdNode;
 use std::convert::TryFrom;
 use std::os::raw::c_int;
 
+/*
+    64-bytes = cache line = 8 x u64 = 512 bits
+
+    // Relatively well aligned (10-bit address is split between the two 4-byte values).
+    // In terms of size, reasonable for most use cases that we can also do today.
+    // The representation mostly works ok, because in resource intensive stuff, we usually
+    // need all three unpacked values.
+    8 nodes, 64-bit nodes, 10-bit variable, 27-bit address, 137M nodes, 1GB for largest BDD.
+    // Alignment is a bit shit (10-bytes per node), and we are wasting 4 bytes per cache line.
+    // But could be worth it compared to the next possible step in precision.
+    // Also, we could fight the alignment with some fancier in-memory representation. Say that
+    // addresses are stored at the beginning of the cache-line and variables at the end,
+    // everything is aligned, and there is a 4-byte gap in the middle. But computing indices
+    // will be a bit more complicated. Or separate in two vectors, but that loses the advantage
+    // of having every node in one cache line.
+    6 nodes, 80-bit nodes, 16-bit variable, 32-bit address, 4B nodes, 42GB for largest BDD.
+    // Again, relatively ok alignment. Variable becomes part of the two addresses.
+    // In terms of size, this is far more than you'd normally put in a PC today.
+    4 nodes, 128-bit nodes, 32-bit variable, 48-bit address, several terabytes of RAM for the largest BDD.
+    // Again, a 2x improvement over the 80-bit scheme. Alignment is still shit though.
+    // It is nowhere near anything that we reasonably need right now.
+    3 nodes, 160-bits, 32-bit variable, 64-bit address, all the memory in the world.
+
+    Finally, we could just do a 64/64/64 representation, in which case we are trashing cache lines,
+    but at least everything is aligned well and we save a few instruction at the expense of memory.
+    Probably a reasonable tradeoff, with a 32/32/32 option for "packed" representation.
+
+    The actual memory consumption of such a BDD would be only 1.5x larger than the 128-bit variant,
+    but will effectively eliminate the need for a 3-node representation. Maybe we can create
+    a backend API that will (reasonably) support swapping of internal representations.
+ */
+
 #[derive(Clone)]
 pub struct Bdd {
     pub variable_count: u16,
