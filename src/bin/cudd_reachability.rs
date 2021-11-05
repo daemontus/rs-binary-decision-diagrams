@@ -11,6 +11,7 @@ use cudd_sys::{DdManager, DdNode};
 use std::convert::TryFrom;
 use std::io::Read;
 use std::os::raw::c_int;
+use std::time::SystemTime;
 
 fn main() {
     let mut buffer = String::new();
@@ -21,6 +22,14 @@ fn main() {
     unsafe {
         Cudd_DisableGarbageCollection(cudd);
     }
+    //unsafe { Cudd_DisableGarbageCollection(cudd); }
+
+    let cudd_variables: Vec<*mut DdNode> = model.variables().map(|v| {
+        let id = usize::from(v);
+        let v = unsafe { Cudd_bddIthVar(cudd, id as c_int) };
+        unsafe { Cudd_Ref(v) };
+        v
+    }).collect();
 
     let cudd_variables: Vec<*mut DdNode> = model
         .variables()
@@ -38,6 +47,8 @@ fn main() {
         })
         .collect();
 
+    let start = SystemTime::now();
+
     let mut universe = unsafe { Cudd_ReadOne(cudd) };
     unsafe { Cudd_Ref(universe) };
     while universe != unsafe { Cudd_ReadLogicZero(cudd) } {
@@ -51,25 +62,26 @@ fn main() {
             let mut done = true;
 
             for i_v in 0..cudd_variables.len() {
-                let successors = successors(
-                    cudd,
-                    reachability,
-                    cudd_variables[i_v],
-                    update_functions[i_v],
-                );
-                let successors = unsafe { Cudd_bddAndNot(cudd, successors, reachability) };
-                let successors = unsafe { Cudd_bddAnd(cudd, successors, universe) };
+                let successors = successors(cudd, reachability, cudd_variables[i_v], update_functions[i_v]);
+                unsafe { Cudd_Ref(successors) };
+                let successors2 = unsafe { Cudd_bddAndNot(cudd, successors, reachability) };
+                unsafe { Cudd_Ref(successors2) };
+                unsafe { Cudd_Deref(successors) };
+                let successors3 = unsafe { Cudd_bddAnd(cudd, successors2, universe) };
+                unsafe { Cudd_Ref(successors3) };
+                unsafe { Cudd_Deref(successors2) };
 
                 //println!("Successors: {}", unsafe { Cudd_DagSize(successors) });
 
-                if successors != unsafe { Cudd_ReadLogicZero(cudd) } {
+                if successors3 != unsafe { Cudd_ReadLogicZero(cudd) } {
                     done = false;
+                    let updated = unsafe { Cudd_bddOr(cudd, successors3, reachability) };
+                    unsafe { Cudd_Ref(updated) };
                     unsafe { Cudd_Deref(reachability) };
-                    reachability = unsafe { Cudd_bddOr(cudd, successors, reachability) };
-                    unsafe { Cudd_Ref(reachability) };
-                    println!("Iteration ({}), reach size: {}", i, unsafe {
-                        Cudd_DagSize(reachability)
-                    });
+                    reachability = updated;
+                    let elapsed = start.elapsed().unwrap().as_millis();
+                    println!("({}) Iteration ({}), reach size: {}", elapsed, i, unsafe { Cudd_DagSize(reachability) });
+                    unsafe { Cudd_Deref(successors3) };
                 }
             }
 
@@ -82,9 +94,11 @@ fn main() {
             }
         }
 
+        let updated = unsafe { Cudd_bddAndNot(cudd, universe, reachability) };
+        unsafe { Cudd_Ref(updated) };
         unsafe { Cudd_Deref(universe) };
-        universe = unsafe { Cudd_bddAndNot(cudd, universe, reachability) };
-        unsafe { Cudd_Ref(universe) };
+        universe = updated;
+
         unsafe { Cudd_Deref(reachability) };
     }
 }
@@ -102,20 +116,29 @@ fn successors(
 
     let go_up = unsafe { Cudd_bddAnd(cudd, states_with_not_v, update) };
     unsafe { Cudd_Ref(go_up) };
+    //unsafe { Cudd_Deref(states_with_v) };
     let go_down = unsafe { Cudd_bddAndNot(cudd, states_with_v, update) };
     unsafe { Cudd_Ref(go_down) };
+    //unsafe { Cudd_Deref(states_with_not_v) };
 
-    let go_up = unsafe { Cudd_bddExistAbstract(cudd, go_up, variable) };
-    unsafe { Cudd_Ref(go_up) };
-    let go_down = unsafe { Cudd_bddExistAbstract(cudd, go_down, variable) };
-    unsafe { Cudd_Ref(go_down) };
+    let go_up2 = unsafe { Cudd_bddExistAbstract(cudd, go_up, variable) };
+    unsafe { Cudd_Ref(go_up2) };
+    //unsafe { Cudd_Deref(go_up) };
+    let go_down2 = unsafe { Cudd_bddExistAbstract(cudd, go_down, variable) };
+    unsafe { Cudd_Ref(go_down2) };
+    //unsafe { Cudd_Deref(go_down) };
 
-    let went_up = unsafe { Cudd_bddAnd(cudd, go_up, variable) };
+    let went_up = unsafe { Cudd_bddAnd(cudd, go_up2, variable) };
     unsafe { Cudd_Ref(went_up) };
-    let went_down = unsafe { Cudd_bddAndNot(cudd, go_down, variable) };
+    //unsafe { Cudd_Deref(go_up2) };
+    let went_down = unsafe { Cudd_bddAndNot(cudd, go_down2, variable) };
     unsafe { Cudd_Ref(went_down) };
+    //unsafe { Cudd_Deref(go_down2) };
 
-    unsafe { Cudd_bddOr(cudd, went_up, went_down) }
+    let result = unsafe { Cudd_bddOr(cudd, went_up, went_down) };
+    //unsafe { Cudd_Deref(went_up) };
+   // unsafe { Cudd_Deref(went_down) };
+    result
 }
 
 unsafe fn Cudd_bddAndNot(
@@ -140,10 +163,8 @@ fn pick_a_vertex(
             next = unsafe { Cudd_bddAnd(cudd, candidates, *v) };
             unsafe { Cudd_Ref(next) };
         }
-        unsafe { Cudd_Deref(candidates) };
+        //unsafe { Cudd_Deref(candidates) };
         candidates = next;
-        unsafe { Cudd_Ref(candidates) };
-        unsafe { Cudd_Deref(next) };
     }
 
     candidates

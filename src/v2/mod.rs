@@ -74,6 +74,17 @@ pub struct Bdd {
     nodes: Vec<BddNode>,
 }
 
+impl Bdd {
+
+    /// This is not ideal, but it allows to calls like
+    /// a.and(b), assuming b is not used anywhere else anymore.
+    /// And if you need to use B, then you can still use a.and(&b).
+    pub fn and<B: AsRef<Bdd>>(&self, other: B) -> Bdd {
+        todo!()
+    }
+
+}
+
 /// A `BddNode` packs together the decision variable and two pointers: low/high. It is slightly
 /// more memory efficient than just storing the values directly.
 #[derive(Copy, Clone, Eq, PartialEq)]

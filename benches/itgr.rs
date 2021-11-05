@@ -10,14 +10,10 @@ use binary_decision_diagrams::v2::bench_fun::{
 };
 use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
-use criterion::measurement::Measurement;
+use cudd_sys::{Cudd_Init, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, Cudd_Quit, Cudd_bddOr, Cudd_DagSize, Cudd_DisableGarbageCollection};
+use criterion::measurement::{Measurement, WallTime};
+use std::time::SystemTime;
 use criterion_perf_events::Perf;
-use cudd_sys::cudd::{
-    Cudd_DagSize, Cudd_DisableGarbageCollection, Cudd_Init, Cudd_Quit, Cudd_bddOr,
-    CUDD_CACHE_SLOTS, CUDD_UNIQUE_SLOTS,
-};
-use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
-use std::process::exit;
 //use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
 pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
@@ -71,10 +67,12 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         let dd_right = right.move_to_cudd(cudd);
         let left_nodes = unsafe { Cudd_DagSize(dd_left) };
         println!("Nodes (left): {}", left_nodes);
+        //let measurement = SystemTime::now();
         let measurement = Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles));
         let start = measurement.start();
         let result = unsafe { Cudd_bddOr(cudd, dd_left, dd_right) };
         let end = measurement.end(start);
+        //let end = measurement.elapsed().unwrap().as_millis();
         let result_nodes = unsafe { Cudd_DagSize(result) };
         println!("Measurement: {}, result: {}", end, result_nodes);*/
         //unsafe { Cudd_Quit(cudd); }
