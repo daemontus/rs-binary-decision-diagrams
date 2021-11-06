@@ -1,5 +1,5 @@
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct NodeId(u64);
 
 impl NodeId {

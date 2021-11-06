@@ -6,3 +6,6 @@ pub mod variable_id;
 pub mod node_id;
 /// A linear in-memory representation of the BDD graph.
 pub mod bdd;
+
+/// A module for the internal data structures of the out-of-order algorithm.
+pub mod ooo;
