@@ -4,7 +4,7 @@ use crate::v3::core::variable_id::VariableId;
 /// A packed representation of a BDD node. The reason we have this struct is that
 /// in the future, we would like to test more compact representations (i.e. 32-bit variable,
 /// 48-bit address) and we need a clear separation between node contents and node representation.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct PackedBddNode {
     variable: u64, // But will always only hold 32-bit values.
     low_link: u64,
@@ -12,6 +12,17 @@ pub struct PackedBddNode {
 }
 
 impl PackedBddNode {
+    pub const ZERO: PackedBddNode = PackedBddNode {
+        variable: u64::MAX,
+        low_link: 0,
+        high_link: 0
+    };
+
+    pub const ONE: PackedBddNode = PackedBddNode {
+        variable: u64::MAX,
+        low_link: 1,
+        high_link: 1,
+    };
 
     pub fn pack(variable: VariableId, low_link: NodeId, high_link: NodeId) -> PackedBddNode {
         PackedBddNode {
@@ -21,7 +32,7 @@ impl PackedBddNode {
         }
     }
 
-    pub fn unpack(self) -> (VariableId, NodeId, NodeId) {
+    pub fn unpack(&self) -> (VariableId, NodeId, NodeId) {
         unsafe {
             (VariableId::from_u64_unchecked(self.variable), self.low_link.into(), self.high_link.into())
         }
