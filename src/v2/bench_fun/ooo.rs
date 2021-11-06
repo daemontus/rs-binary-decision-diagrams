@@ -33,7 +33,7 @@
 //! only "commits" changes once per "cycle". But this is slightly more complicated and
 //! I'm not sure it is worth the effort. Maybe as v2.
 //!
-
+/*
 use std::cmp::min;
 use crate::v2::bench_fun::apply::{NodeCache, TaskCache};
 use crate::v2::bench_fun::deps::{Bdd, BddNode, NodeId, VariableId};
@@ -403,7 +403,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                     if found != u64::MAX {
                         let rob_slot = RobSlot(task.rob_slot as u64);
                         reorder_buffer.set_slot_value(rob_slot, NodeId(found));
-                        task_cache.write_at(found, task.node_cache_slot, etc);
+                        // TODO: task_cache.write_at(found, task.node_cache_slot, etc);
                     }
                 }
             }
@@ -416,7 +416,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                     if low == high {
                         let rob_slot = RobSlot(task.rob_slot as u64);
                         reorder_buffer.set_slot_value(rob_slot, low);
-                        task_cache.write_at(low, task.node_cache_slot, etc);
+                        // TODO: task_cache.write_at(low, task.node_cache_slot, etc);
                         // This tells the retirement stage that the task is done and can be skipped.
                         task.rob_slot == u32::MAX;
                     } else {
@@ -581,4 +581,4 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
         variable_count: variables,
         nodes: new_nodes,
     }
-}
+}*/
