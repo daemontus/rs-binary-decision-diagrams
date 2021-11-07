@@ -94,6 +94,10 @@ impl TaskStack {
         unsafe { self.pop_with_result(result.into()); }
     }
 
+    pub fn len(&self) -> usize {
+        self.index_after_last
+    }
+
     pub unsafe fn pop_with_slot_id(&mut self, result: RobSlot) {
         unsafe { self.pop_with_result(u64::from(u32::from(result)) | ROB_SLOT); }
     }
@@ -101,7 +105,7 @@ impl TaskStack {
     unsafe fn pop_with_result(&mut self, result: u64) {
         self.index_after_last -= 1;
         let top = unsafe { self.items.get_unchecked(self.index_after_last) };
-        let offset = top.offset as usize;   // can be only 0/1/2.
+        let offset = (top.offset & NOT_DECODED.not()) as usize;   // can be only 0/1/2.
         let output = unsafe { self.items.get_unchecked_mut(self.index_after_last - offset) };
         // offset = 1 is "high", offset = 2 is "low"
         // Also, special case offset = 0 (root task) is also low.

@@ -73,6 +73,10 @@ impl NodeCache {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.index_after_last
+    }
+
     /// Try to add a node to the cache. If successful (or node exists), returns a `NodeId`.
     /// Otherwise, return a `NodeCacheSlot` that should be tried during next attempt.
     pub fn ensure(&mut self, node: &PackedBddNode) -> Result<NodeId, NodeCacheSlot> {
@@ -131,6 +135,10 @@ impl NodeCache {
         let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
         let base = max(low_link, high_link);
         (base + block_index).rem(self.capacity) as usize
+    }
+
+    pub fn export_nodes(self) -> Vec<PackedBddNode> {
+        self.nodes.into_iter().take(self.index_after_last).map(|(node, _)| { /*println!("{:?}", node); */node }).collect()
     }
 
 }
