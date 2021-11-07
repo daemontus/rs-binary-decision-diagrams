@@ -48,6 +48,10 @@ pub struct RobSlot(u32);
 
 impl RobSlot {
     pub const UNDEFINED: RobSlot = RobSlot(u32::MAX);
+
+    pub fn into_usize(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl From<u32> for RobSlot {
@@ -75,12 +79,12 @@ impl ReorderBuffer {
         list[last_index] = u64::MAX;
         ReorderBuffer {
             buffer: list,
-            next_free: 0
+            next_free: RobSlot(0)
         }
     }
 
     pub fn is_full(&self) -> bool {
-        self.next_free == u32::MAX
+        self.next_free == RobSlot::UNDEFINED
     }
 
     /// Returns a reference to the next free ROB slot, and initializes said slot with an
@@ -90,14 +94,14 @@ impl ReorderBuffer {
     pub unsafe fn allocate_slot(&mut self) -> RobSlot {
         debug_assert!(!self.is_full());
         let slot_id = self.next_free;
-        let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id as usize) };
+        let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id.into_usize()) };
 
         // Free slots are a linked list, hence slot value is either next free slot or undefined.
-        self.next_free = *slot_value as u32;
+        self.next_free = RobSlot::from(*slot_value as u32);
         // Erase the linked list pointer, meaning that this slot contains an unfinished task.
         *slot_value = u64::MAX;
         // Return a pointer to the newly allocated ROB slot.
-        RobSlot(slot_id as u32)
+        slot_id
     }
 
     /// Free the value of the given `slot`.
@@ -109,9 +113,9 @@ impl ReorderBuffer {
         let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id as usize) };
 
         // Erase slot value and replace with pointer of next free slot.
-        *slot_value = u64::from(self.next_free);
+        *slot_value = u64::from(u32::from(self.next_free));
         // Update next free value such that it points to this newly freed slot.
-        self.next_free = slot_id;
+        self.next_free = slot;
     }
 
     /// Retrieve a `NodeId` that is stored in the given ROB `slot`. The value is
