@@ -31,6 +31,10 @@ impl Bdd {
         NodeId::from(self.nodes.len() - 1)
     }
 
+    pub fn get_height(&self) -> usize {
+        self.height
+    }
+
     pub unsafe fn get_node_unchecked(&self, id: NodeId) -> &PackedBddNode {
         unsafe { self.nodes.get_unchecked(id.into_usize()) }
     }
