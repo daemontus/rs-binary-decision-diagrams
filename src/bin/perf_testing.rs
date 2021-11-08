@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use binary_decision_diagrams::perf_testing::naive_coupled_dfs::naive_coupled_dfs;
+use binary_decision_diagrams::perf_testing::coupled_dfs::coupled_dfs;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -102,7 +102,7 @@ fn main() {
 }
 
 fn benchmark_code(left: &Bdd, right: &Bdd) -> usize {
-    let counted = naive_coupled_dfs(left, right);
+    let counted = coupled_dfs(left, right);
     println!("Counted {} nodes.", counted);
     counted
 }

@@ -425,23 +425,59 @@ pub mod bdd_dfs {
     }
 }
 
-pub mod naive_coupled_dfs {
+pub mod coupled_dfs {
     use super::bdd::Bdd;
     use super::node_id::NodeId;
-    use std::collections::HashSet;
     use std::cmp::min;
-    use fxhash::FxBuildHasher;
+    use std::num::NonZeroU64;
+    use std::ops::{Rem, BitXor};
 
-    pub fn naive_coupled_dfs(left_bdd: &Bdd, right_bdd: &Bdd) -> usize {
+    struct Cache {
+        capacity: NonZeroU64,
+        items: Vec<(NodeId, NodeId)>
+    }
+
+    impl Cache {
+        pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+
+        pub fn new(capacity: usize) -> Cache {
+            Cache {
+                capacity: unsafe { NonZeroU64::new_unchecked(capacity as u64) },
+                items: vec![(NodeId::ZERO, NodeId::ZERO); capacity]
+            }
+        }
+
+        /// Returns true if task was freshly added and false if it was already in the cache.
+        pub fn ensure(&mut self, task: (NodeId, NodeId)) -> bool {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            if *slot_value == task {
+                false
+            } else {
+                *slot_value = task;
+                true
+            }
+        }
+
+        // A variant of a basic Knuth integer hashing algorithm.
+        fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
+            // The rotation ensures that we don't get an obvious collision when left == right.
+            let left_hash = u64::from(task.0).rotate_left(7).wrapping_mul(Self::SEED);
+            let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
+            left_hash.bitxor(right_hash).rem(self.capacity) as usize
+        }
+
+    }
+
+    pub fn coupled_dfs(left_bdd: &Bdd, right_bdd: &Bdd) -> usize {
         let max_height = left_bdd.get_height() + right_bdd.get_height();
         let mut stack: Vec<(NodeId, NodeId)> = Vec::with_capacity(max_height);
-        let mut visited: HashSet<(NodeId, NodeId), FxBuildHasher> = HashSet::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
+        let mut visited = Cache::new(left_bdd.node_count());
         let mut count = 0;
 
         stack.push((left_bdd.get_root_id(), right_bdd.get_root_id()));
         while let Some((left, right)) = stack.pop() {
-            if !visited.contains(&(left, right)) {
-                visited.insert((left, right));
+            if visited.ensure((left, right)) {
                 count += 1;
                 if !(left.is_terminal() && right.is_terminal()) {
                     let left_node = unsafe { left_bdd.get_node_unchecked(left) };
