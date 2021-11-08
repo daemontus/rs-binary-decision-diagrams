@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use binary_decision_diagrams::perf_testing::coupled_dfs::coupled_dfs;
+use binary_decision_diagrams::perf_testing::apply::apply;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -58,8 +58,8 @@ fn main() {
             .unwrap();
         println!("Right ready: {}", right.node_count());
 
-        let left = left.sort_preorder();
-        let right = right.sort_preorder();
+        //let left = left.sort_preorder();
+        //let right = right.sort_preorder();
 
         println!("warmup run...");
         benchmark_code(&left, &right);
@@ -74,7 +74,7 @@ fn main() {
         let i_cache_references = cache_references.start();
         let i_cache_misses = cache_misses.start();
 
-        let product_nodes = benchmark_code(&left, &right);
+        let (product_nodes, product_tasks) = benchmark_code(&left, &right);
 
         let cycles = cycles.end(i_cycles);
         let instructions = instructions.end(i_instructions);
@@ -82,11 +82,12 @@ fn main() {
         let cache_misses = cache_misses.end(i_cache_misses);
         let ipc = (instructions as f64) / (cycles as f64);
         let hit_rate = 100.0 - (100.0 * (cache_misses as f64) / (cache_references as f64));
-        let instructions_per_node = (instructions as f64) / (product_nodes as f64);
-        let cycles_per_node = (cycles as f64) / (product_nodes as f64);
+        let instructions_per_node = (instructions as f64) / (product_tasks as f64);
+        let cycles_per_node = (cycles as f64) / (product_tasks as f64);
 
-        println!("| {} | {} | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} |",
+        println!("| {} | {} | {} | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} |",
                  benchmark,
+                 product_tasks,
                  product_nodes,
                  cycles,
                  instructions,
@@ -101,8 +102,8 @@ fn main() {
     }
 }
 
-fn benchmark_code(left: &Bdd, right: &Bdd) -> usize {
-    let counted = coupled_dfs(left, right);
-    println!("Counted {} nodes.", counted);
-    counted
+fn benchmark_code(left: &Bdd, right: &Bdd) -> (usize, usize) {
+    let (created, counted) = apply(left, right);
+    println!("Counted {} nodes, created {} nodes.", counted, created);
+    (created, counted)
 }
