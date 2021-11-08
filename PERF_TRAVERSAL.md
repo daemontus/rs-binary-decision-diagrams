@@ -37,4 +37,4 @@ Finally, by using unsafe code that avoids bounds checking, we can eliminate ~20 
 | large-same-larger.96221488 | 96221488 | 1519381690 | 2820479262 | 66467270 | 5588365 | 1.86 | 91.59 | 29.31 | 15.79 |
 | large-same-same.176900752 | 176900752 | 2727206396 | 5190562772 | 122506143 | 9439052 | 1.90 | 92.30 | 29.34 | 15.42 |
 
-Note that strictly speaking, this version has worse IPC and hit rates, but it still performs ~4-5 cycles per node less than the basic version with a sorted BDD.
+Note that strictly speaking, this version has worse IPC and hit rates, but it still performs ~4-5 cycles per node less than the basic version with a sorted BDD. Note that naive prefetching of BDD nodes seems to only make the algorithm worse.
