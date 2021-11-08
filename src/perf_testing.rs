@@ -33,7 +33,7 @@ pub mod variable_id {
 }
 
 pub mod node_id {
-    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub struct NodeId(u64); // Only 48-bits should be used.
 
     impl NodeId {
@@ -417,6 +417,55 @@ pub mod bdd_dfs {
                     let node = unsafe { bdd.get_node_unchecked(top) };
                     stack.push(node.get_high_link());
                     stack.push(node.get_low_link());
+                }
+            }
+        }
+
+        count
+    }
+}
+
+pub mod naive_coupled_dfs {
+    use super::bdd::Bdd;
+    use super::node_id::NodeId;
+    use std::collections::HashSet;
+    use std::cmp::min;
+    use fxhash::FxBuildHasher;
+
+    pub fn naive_coupled_dfs(left_bdd: &Bdd, right_bdd: &Bdd) -> usize {
+        let max_height = left_bdd.get_height() + right_bdd.get_height();
+        let mut stack: Vec<(NodeId, NodeId)> = Vec::with_capacity(max_height);
+        let mut visited: HashSet<(NodeId, NodeId), FxBuildHasher> = HashSet::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
+        let mut count = 0;
+
+        stack.push((left_bdd.get_root_id(), right_bdd.get_root_id()));
+        while let Some((left, right)) = stack.pop() {
+            if !visited.contains(&(left, right)) {
+                visited.insert((left, right));
+                count += 1;
+                if !(left.is_terminal() && right.is_terminal()) {
+                    let left_node = unsafe { left_bdd.get_node_unchecked(left) };
+                    let right_node = unsafe { right_bdd.get_node_unchecked(right) };
+
+                    let (l_var, l_low, l_high) = left_node.unpack();
+                    let (r_var, r_low, r_high) = right_node.unpack();
+
+                    let variable = min(l_var, r_var);
+
+                    let (l_low, l_high) = if l_var == variable {
+                        (l_low, l_high)
+                    } else {
+                        (left, left)
+                    };
+
+                    let (r_low, r_high) = if r_var == variable {
+                        (r_low, r_high)
+                    } else {
+                        (right, right)
+                    };
+
+                    stack.push((l_high, r_high));
+                    stack.push((l_low, r_low));
                 }
             }
         }
