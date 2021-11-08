@@ -89,38 +89,31 @@ pub mod packed_bdd_node {
     use super::node_id::NodeId;
 
     #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-    pub struct PackedBddNode(u64, u64);
+    pub struct PackedBddNode(u32, u64, u64);
 
     impl PackedBddNode {
-        const VARIABLE_MASK: u64 = (u16::MAX as u64) << 48;
-        const ADDRESS_MASK: u64 = (1 << 48) - 1;
-        pub const ZERO: PackedBddNode = PackedBddNode(Self::VARIABLE_MASK, Self::VARIABLE_MASK);
+        pub const ZERO: PackedBddNode = PackedBddNode(u32::MAX, 0, 0);
 
-        pub const ONE: PackedBddNode = PackedBddNode(Self::VARIABLE_MASK + 1, Self::VARIABLE_MASK + 1);
+        pub const ONE: PackedBddNode = PackedBddNode(u32::MAX, 0 , 0);
 
         pub fn pack(variable: VariableId, low_link: NodeId, high_link: NodeId) -> PackedBddNode {
-            let variable = u64::from(u32::from(variable));
-            let packed_low = u64::from(low_link) | (variable << 48);    // add low 16 bits
-            let packed_high = u64::from(high_link) | ((variable << 32) & Self::VARIABLE_MASK);  // add high 16 bits
-            PackedBddNode(packed_low, packed_high)
+            PackedBddNode(u32::from(variable), u64::from(low_link), u64::from(high_link))
         }
 
         pub fn unpack(&self) -> (VariableId, NodeId, NodeId) {
-            let variable = ((self.0 >> 48) | ((self.0 & Self::VARIABLE_MASK) >> 32)) as u32;
-            (VariableId::from(variable), NodeId::from(self.0 & Self::ADDRESS_MASK), NodeId::from(self.1 & Self::ADDRESS_MASK))
+            (VariableId::from(self.0), NodeId::from(self.1), NodeId::from(self.2))
         }
 
         pub fn get_variable(&self) -> VariableId {
-            let variable = ((self.0 >> 48) | ((self.0 & Self::VARIABLE_MASK) >> 32)) as u32;
-            VariableId::from(variable)
+            VariableId::from(self.0)
         }
 
         pub fn get_low_link(&self) -> NodeId {
-            NodeId::from(self.0 & Self::ADDRESS_MASK)
+            NodeId::from(self.1)
         }
 
         pub fn get_high_link(&self) -> NodeId {
-            NodeId::from(self.1 & Self::ADDRESS_MASK)
+            NodeId::from(self.2)
         }
 
     }
@@ -428,9 +421,9 @@ pub mod bdd_dfs {
 pub mod coupled_dfs {
     use super::bdd::Bdd;
     use super::node_id::NodeId;
-    use std::cmp::min;
     use std::num::NonZeroU64;
-    use std::ops::{Rem, BitXor};
+    use std::ops::Rem;
+    use super::bdd_dfs::UnsafeStack;
 
     struct Cache {
         capacity: NonZeroU64,
@@ -439,7 +432,7 @@ pub mod coupled_dfs {
 
     impl Cache {
         pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
-        const HASH_BLOCK: u64 = 1 << 14;
+        const HASH_BLOCK: u64 = 1 << 13;
 
         pub fn new(capacity: usize) -> Cache {
             Cache {
@@ -463,49 +456,62 @@ pub mod coupled_dfs {
         // Locality sensitive hashing algorithm, assuming that left nodes are a
         // mostly-growing sequence.
         fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
-            // The rotation ensures that we don't get an obvious collision when left == right.
-            let left_hash = u64::from(task.0).rotate_left(7).wrapping_mul(Self::SEED);
             let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
-            let block_index: u64 = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
+            let block_index = right_hash.rem(Self::HASH_BLOCK);
             let block_start: u64 = u64::from(task.0);
+
+            unsafe {
+                // Usually not that important, but seems to be actually helping for large BDDs.
+                let pointer: *const (NodeId, NodeId) =
+                    self.items.get_unchecked((block_start as usize) + 128);
+                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
+            }
             (block_start + block_index).rem(self.capacity) as usize
         }
 
     }
 
     pub fn coupled_dfs(left_bdd: &Bdd, right_bdd: &Bdd) -> usize {
-        let max_height = left_bdd.get_height() + right_bdd.get_height();
-        let mut stack: Vec<(NodeId, NodeId)> = Vec::with_capacity(max_height);
+        let height_sum = left_bdd.get_height() + right_bdd.get_height();
+        let mut stack: UnsafeStack<(NodeId, NodeId)> = UnsafeStack::new(height_sum);
         let mut visited = Cache::new(left_bdd.node_count());
         let mut count = 0;
 
         stack.push((left_bdd.get_root_id(), right_bdd.get_root_id()));
-        while let Some((left, right)) = stack.pop() {
+        while !stack.is_empty() {
+            let (left, right) = stack.pop();
             if visited.ensure((left, right)) {
                 count += 1;
-                if !(left.is_terminal() && right.is_terminal()) {
-                    let left_node = unsafe { left_bdd.get_node_unchecked(left) };
-                    let right_node = unsafe { right_bdd.get_node_unchecked(right) };
 
-                    let (l_var, l_low, l_high) = left_node.unpack();
-                    let (r_var, r_low, r_high) = right_node.unpack();
+                let left_node = unsafe { left_bdd.get_node_unchecked(left) };
+                let right_node = unsafe { right_bdd.get_node_unchecked(right) };
 
-                    let variable = min(l_var, r_var);
+                let (l_var, l_low, l_high) = left_node.unpack();
+                let (r_var, r_low, r_high) = right_node.unpack();
 
-                    let (l_low, l_high) = if l_var == variable {
-                        (l_low, l_high)
-                    } else {
-                        (left, left)
-                    };
-
-                    let (r_low, r_high) = if r_var == variable {
-                        (r_low, r_high)
-                    } else {
-                        (right, right)
-                    };
-
-                    stack.push((l_high, r_high));
-                    stack.push((l_low, r_low));
+                // This explicit "switch" is slightly faster. Not sure exactly why, but
+                // it is probably easier to branch predict.
+                if l_var == r_var {
+                    if !(l_high.is_terminal() && r_high.is_terminal()) {
+                        stack.push((l_high, r_high));
+                    }
+                    if !(l_low.is_terminal() && r_low.is_terminal()) {
+                        stack.push((l_low, r_low));
+                    }
+                } else if l_var < r_var {
+                    if !(l_high.is_terminal() && right.is_terminal()) {
+                        stack.push((l_high, right));
+                    }
+                    if !(l_low.is_terminal() && right.is_terminal()) {
+                        stack.push((l_low, right));
+                    }
+                } else {
+                    if !(left.is_terminal() && r_high.is_terminal()) {
+                        stack.push((left, r_high));
+                    }
+                    if !(left.is_terminal() && r_low.is_terminal()) {
+                        stack.push((left, r_low));
+                    }
                 }
             }
         }

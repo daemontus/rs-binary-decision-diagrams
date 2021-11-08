@@ -58,8 +58,8 @@ fn main() {
             .unwrap();
         println!("Right ready: {}", right.node_count());
 
-        let left = left.sort_postorder();
-        let right = right.sort_postorder();
+        let left = left.sort_preorder();
+        let right = right.sort_preorder();
 
         println!("warmup run...");
         benchmark_code(&left, &right);
