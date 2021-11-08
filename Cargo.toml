@@ -13,6 +13,9 @@ biodivine-lib-param-bn = "0.1.0"
 bitintr = "0.3.0"
 cudd-sys = "1.0.0"
 static_assertions = "1.1.0"
+criterion-perf-events = "0.1.3"
+perfcnt = "0.7.1"
+criterion = "0.3.4"
 
 [dev-dependencies]
 criterion = "0.3.4"

@@ -1,6 +1,7 @@
 #![allow(unused)]
 
-use binary_decision_diagrams::v2::bench_fun::deps::{Bdd, NodeId};
+//use binary_decision_diagrams::v2::bench_fun::deps::{Bdd, NodeId};
+use binary_decision_diagrams::v3::core::bdd::Bdd;
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::convert::TryFrom;
 //use binary_decision_diagrams::_bdd_u32::_impl_task_bench::{gen_tasks, TaskCache, UnrolledStack};
@@ -10,10 +11,11 @@ use binary_decision_diagrams::v2::bench_fun::{
 };
 use biodivine_lib_bdd::Bdd as LibBdd;
 use biodivine_lib_bdd::BddVariableSet;
-use cudd_sys::{Cudd_Init, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, Cudd_Quit, Cudd_bddOr, Cudd_DagSize, Cudd_DisableGarbageCollection};
+//use cudd_sys::{Cudd_Init, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, Cudd_Quit, Cudd_bddOr, Cudd_DagSize, Cudd_DisableGarbageCollection};
 use criterion::measurement::{Measurement, WallTime};
 use std::time::SystemTime;
 use criterion_perf_events::Perf;
+use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 //use binary_decision_diagrams::_bdd_u32::PartialNodeCache;
 
 pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
@@ -45,15 +47,15 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
         let mut left =
             Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
         println!("Left ready: {}", left.node_count());
-        left.sort_preorder_safe();
+        let left = left.sort_preorder();
         let right_path = format!("./bench_inputs/reach/{}.or.right.bdd", benchmark);
         let mut right =
             Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
         println!("Right ready: {}", right.node_count());
-        right.sort_preorder_safe();
+        let right = right.sort_preorder();
 
-        println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
-        println!("Node count: {} (actual)", apply(&left, &right).node_count());
+        //println!("Task count: {} (minimal)", naive_coupled_dfs(&left, &right));
+        //println!("Node count: {} (actual)", apply(&left, &right).node_count());
 
         //let left = LibBdd::from_string(std::fs::read_to_string(&left_path).unwrap().as_str());
         //let right = LibBdd::from_string(std::fs::read_to_string(&right_path).unwrap().as_str());
@@ -94,7 +96,8 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
                 //unsafe { Cudd_bddOr(cudd, dd_left, dd_right) }
                 //left.or(&right)
                 //left.or(&right)
-                apply(&left, &right).node_count()
+                binary_decision_diagrams::v3::core::ooo::apply(&left, &right).node_count()
+                //apply(&left, &right).node_count()
                 //optimized_coupled_dfs(&left, &right)
                 //explore(&left)
                 //exit(128)
@@ -108,7 +111,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
+    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)));
     targets = criterion_benchmark
 );
 

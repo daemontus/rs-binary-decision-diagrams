@@ -42,6 +42,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
         if !has_result {
             let (left, right) = unsafe { stack.peek_as_task_unchecked() };
+            //println!("Decode {:?}", (left, right));
 
             if left.is_one() || right.is_one() {
                 has_result = unsafe { stack.save_result_unchecked(NodeId::ONE) };
@@ -52,6 +53,7 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                 if !cached_node.is_undefined() {
                     has_result = unsafe { stack.save_result_unchecked(cached_node) };
                 } else {
+
                     let left_node = unsafe { left_bdd.get_node_unchecked(left) };
                     let right_node = unsafe { right_bdd.get_node_unchecked(right) };
 
@@ -68,6 +70,9 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
                     } else {
                         (right, right)
                     };
+
+                    //println!("Push {:?}", (left_high, right_high));
+                    //println!("Push {:?}", (left_low, right_low));
 
                     // When completed, the order of tasks will be swapped (high on top).
                     unsafe {
@@ -138,6 +143,12 @@ pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> Bdd {
 
     let mut nodes = node_cache.nodes;
     let node_count = node_cache.index_after_last;
+
+    /*for (node_data, _) in nodes.iter().take(node_count) {
+        let (low, high) = (NodeId(node_data.0 & ID_MASK), NodeId(node_data.1));
+        let variable = ((node_data.0 & VARIABLE_MASK) >> 48) as u16;
+        println!("{:?} {:?} {:?}", variable, low, high);
+    }*/
 
     for (_, i) in nodes.iter_mut() {
         *i = 0;

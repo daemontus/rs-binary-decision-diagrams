@@ -1,4 +1,5 @@
-use binary_decision_diagrams::v2::Bdd;
+//use binary_decision_diagrams::v2::Bdd;
+use binary_decision_diagrams::v3::core::bdd::Bdd;
 use std::convert::TryFrom;
 use std::time::SystemTime;
 
@@ -27,16 +28,17 @@ fn main() {
         let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
         let mut left =
             Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
-        left.sort_preorder();
+        let left = left.sort_preorder();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
         let mut right =
             Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
-        right.sort_preorder();
+        right = right.sort_preorder();
         if left.node_count() == 326271 {
             let mut k = 0;
             let start = SystemTime::now();
-            for _ in 0..1000 {
-                k += left.and_not(&right).node_count();
+            for _ in 0..1 {
+                //k += left.and(&right).node_count();
+                k += binary_decision_diagrams::v3::core::ooo::apply(&left, &right).node_count();
                 //k += and_not_u48_function(&left, &right).node_count();
                 //k += gen_tasks(&left, &right, &mut task_cache, &mut node_cache);
             }
