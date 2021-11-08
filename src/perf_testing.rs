@@ -682,6 +682,7 @@ pub mod apply {
         variable: VariableId,
         task: (NodeId, NodeId),
         results: [NodeId; 2],
+        task_cache_slot: usize,
     }
 
     impl ApplyTask {
@@ -691,7 +692,8 @@ pub mod apply {
                 offset: offset << 1,
                 task,
                 variable: VariableId::UNDEFINED,
-                results: [NodeId::UNDEFINED, NodeId::UNDEFINED]
+                results: [NodeId::UNDEFINED, NodeId::UNDEFINED],
+                task_cache_slot: 0,
             }
         }
     }
@@ -712,18 +714,23 @@ pub mod apply {
             }
         }
 
-        pub fn read(&self, task: (NodeId, NodeId)) -> NodeId {
+        pub fn read(&self, task: (NodeId, NodeId)) -> (NodeId, usize) {
             let slot = self.hashed_index(task);
             let slot_value = unsafe { self.items.get_unchecked(slot ) };
             if slot_value.0 == task {
-                slot_value.1
+                (slot_value.1, slot)
             } else {
-                NodeId::UNDEFINED
+                (NodeId::UNDEFINED, slot)
             }
         }
 
         pub fn write(&mut self, task: (NodeId, NodeId), result: NodeId) {
             let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        pub fn write_at(&mut self, slot: usize, task: (NodeId, NodeId), result: NodeId) {
             let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
             *slot_value = (task, result);
         }
@@ -769,10 +776,11 @@ pub mod apply {
                 } else if left.is_zero() && right.is_zero() {   // Certain zero
                     result = NodeId::ZERO;
                 } else {
-                    let cached = task_cache.read(top.task);
+                    let (cached, slot) = task_cache.read(top.task);
                     if !cached.is_undefined() {
                         result = cached;
                     } else {
+                        top.task_cache_slot = slot;
                         // Actually expand.
                         task_count += 1;
 
@@ -803,7 +811,7 @@ pub mod apply {
                 // Task is decoded, we have to create a new node for it.
                 let (result_low, result_high) = (top.results[1], top.results[0]);
                 if result_low == result_high {
-                    task_cache.write(top.task, result_low);
+                    task_cache.write_at(top.task_cache_slot, top.task, result_low);
                     result = result_low;
                 } else {
                     let node = PackedBddNode::pack(top.variable, result_low, result_high);
@@ -813,7 +821,7 @@ pub mod apply {
                         cached = node_cache.ensure_at(&node, slot);
                     }
                     result = cached.unwrap();
-                    task_cache.write(top.task, result);
+                    task_cache.write_at(top.task_cache_slot, top.task, result);
                 }
             }
 
@@ -822,7 +830,8 @@ pub mod apply {
                 if !stack.is_empty() {
                     let parent = stack.peek_at(offset);
                     // high = 1, low = 2, so they will be saved in reverse order.
-                    parent.results[offset - 1] = result;
+                    let slot = unsafe { parent.results.get_unchecked_mut(offset - 1) };
+                    *slot = result;
                 }
             }
         }

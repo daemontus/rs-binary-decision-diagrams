@@ -111,7 +111,7 @@ pub fn criterion_benchmark(c: &mut Criterion<Perf>) {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)));
+    config = Criterion::default().with_measurement(Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles)));
     targets = criterion_benchmark
 );
 
