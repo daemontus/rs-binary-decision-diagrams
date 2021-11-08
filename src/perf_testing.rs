@@ -527,6 +527,8 @@ pub mod apply {
     use fxhash::FxBuildHasher;
     use super::packed_bdd_node::PackedBddNode;
     use std::cmp::min;
+    use std::ops::Rem;
+    use std::num::NonZeroU64;
 
     struct ApplyTask {
         offset: u8,
@@ -545,9 +547,59 @@ pub mod apply {
         }
     }
 
+    struct TaskCache {
+        capacity: NonZeroU64,
+        items: Vec<((NodeId, NodeId), NodeId)>
+    }
+
+    impl TaskCache {
+        pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        const HASH_BLOCK: u64 = 1 << 13;
+
+        pub fn new(capacity: usize) -> TaskCache {
+            TaskCache {
+                capacity: unsafe { NonZeroU64::new_unchecked(capacity as u64) },
+                items: vec![((NodeId::ZERO, NodeId::ZERO), NodeId::ZERO); capacity]
+            }
+        }
+
+        pub fn read(&self, task: (NodeId, NodeId)) -> NodeId {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                slot_value.1
+            } else {
+                NodeId::UNDEFINED
+            }
+        }
+
+        pub fn write(&mut self, task: (NodeId, NodeId), result: NodeId) {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        // Locality sensitive hashing algorithm, assuming that left nodes are a
+        // mostly-growing sequence.
+        fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
+            let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
+            let block_index = right_hash.rem(Self::HASH_BLOCK);
+            let block_start: u64 = u64::from(task.0);
+
+            unsafe {
+                // Usually not that important, but seems to be actually helping for large BDDs.
+                let pointer: *const ((NodeId, NodeId), NodeId) =
+                    self.items.get_unchecked((block_start as usize) + 128);
+                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
+            }
+            (block_start + block_index).rem(self.capacity) as usize
+        }
+
+    }
+
     pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
         let height_limit = left_bdd.get_height() + right_bdd.get_height();
-        let mut task_cache: HashMap<(NodeId, NodeId), NodeId, _> = HashMap::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
+        let mut task_cache = TaskCache::new(left_bdd.node_count());
         let mut node_cache: HashMap<PackedBddNode, NodeId, _> = HashMap::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
         let mut task_count = 0;
         let mut next_node_id: u64 = 2;
@@ -566,36 +618,39 @@ pub mod apply {
                     result = NodeId::ONE;
                 } else if left.is_zero() && right.is_zero() {   // Certain zero
                     result = NodeId::ZERO;
-                } else if let Some(cached) = task_cache.get(&top.task) {    // Cached
-                    result = *cached;
                 } else {
-                    // Actually expand.
-                    task_count += 1;
-
-                    let left_node = unsafe { left_bdd.get_node_unchecked(left) };
-                    let right_node = unsafe { right_bdd.get_node_unchecked(right) };
-
-                    let (l_var, l_low, l_high) = left_node.unpack();
-                    let (r_var, r_low, r_high) = right_node.unpack();
-
-                    // This explicit "switch" is slightly faster. Not sure exactly why, but
-                    // it is probably easier to branch predict.
-                    if l_var == r_var {
-                        stack.push(ApplyTask::new(1, (l_high, r_high)));
-                        stack.push(ApplyTask::new(2, (l_low, r_low)));
-                    } else if l_var < r_var {
-                        stack.push(ApplyTask::new(1, (l_high, right)));
-                        stack.push(ApplyTask::new(2, (l_low, right)));
+                    let cached = task_cache.read(top.task);
+                    if !cached.is_undefined() {
+                        result = cached;
                     } else {
-                        stack.push(ApplyTask::new(1, (left, r_high)));
-                        stack.push(ApplyTask::new(2, (left, r_low)));
+                        // Actually expand.
+                        task_count += 1;
+
+                        let left_node = unsafe { left_bdd.get_node_unchecked(left) };
+                        let right_node = unsafe { right_bdd.get_node_unchecked(right) };
+
+                        let (l_var, l_low, l_high) = left_node.unpack();
+                        let (r_var, r_low, r_high) = right_node.unpack();
+
+                        // This explicit "switch" is slightly faster. Not sure exactly why, but
+                        // it is probably easier to branch predict.
+                        if l_var == r_var {
+                            stack.push(ApplyTask::new(1, (l_high, r_high)));
+                            stack.push(ApplyTask::new(2, (l_low, r_low)));
+                        } else if l_var < r_var {
+                            stack.push(ApplyTask::new(1, (l_high, right)));
+                            stack.push(ApplyTask::new(2, (l_low, right)));
+                        } else {
+                            stack.push(ApplyTask::new(1, (left, r_high)));
+                            stack.push(ApplyTask::new(2, (left, r_low)));
+                        }
                     }
                 }
             } else {
                 // Task is decoded, we have to create a new node for it.
                 let (result_low, result_high) = (top.results[1], top.results[0]);
                 if result_low == result_high {
-                    task_cache.insert(top.task, result_low);
+                    task_cache.write(top.task, result_low);
                     result = result_low;
                 } else {
                     let (left, right) = top.task;
@@ -607,12 +662,12 @@ pub mod apply {
                     let node = PackedBddNode::pack(variable, result_low, result_high);
 
                     if let Some(&existing) = node_cache.get(&node) {
-                        task_cache.insert(top.task, existing);
+                        task_cache.write(top.task, existing);
                         result = existing;
                     } else {
                         let new_id = NodeId::from(next_node_id);
                         next_node_id += 1;
-                        task_cache.insert(top.task, new_id);
+                        task_cache.write(top.task, new_id);
                         node_cache.insert(node, new_id);
                         result = new_id;
                     }
