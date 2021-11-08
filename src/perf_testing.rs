@@ -699,7 +699,6 @@ pub mod apply {
     }
 
     struct TaskCache {
-        capacity: NonZeroU64,
         items: Vec<((NodeId, NodeId), NodeId)>
     }
 
@@ -709,8 +708,7 @@ pub mod apply {
 
         pub fn new(capacity: usize) -> TaskCache {
             TaskCache {
-                capacity: unsafe { NonZeroU64::new_unchecked(capacity as u64) },
-                items: vec![((NodeId::ZERO, NodeId::ZERO), NodeId::ZERO); capacity]
+                items: vec![((NodeId::ZERO, NodeId::ZERO), NodeId::ZERO); capacity + (Self::HASH_BLOCK as usize)]
             }
         }
 
@@ -748,7 +746,7 @@ pub mod apply {
                     self.items.get_unchecked((block_start as usize) + 128);
                 std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
             }
-            (block_start + block_index).rem(self.capacity) as usize
+            (block_start + block_index) as usize
         }
 
     }
