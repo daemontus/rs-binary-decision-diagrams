@@ -1,5 +1,3 @@
-use crate::perf_testing::bdd::Bdd;
-use std::option::Option::Some;
 
 pub mod variable_id {
 
@@ -87,8 +85,8 @@ pub mod node_id {
 }
 
 pub mod packed_bdd_node {
-    use crate::perf_testing::variable_id::VariableId;
-    use crate::perf_testing::node_id::NodeId;
+    use super::variable_id::VariableId;
+    use super::node_id::NodeId;
 
     #[derive(Clone, Eq, PartialEq, Hash, Debug)]
     pub struct PackedBddNode(u64, u64);
@@ -130,9 +128,9 @@ pub mod packed_bdd_node {
 }
 
 pub mod bdd {
-    use crate::perf_testing::packed_bdd_node::PackedBddNode;
-    use crate::perf_testing::node_id::NodeId;
-    use crate::perf_testing::variable_id::VariableId;
+    use super::packed_bdd_node::PackedBddNode;
+    use super::node_id::NodeId;
+    use super::variable_id::VariableId;
     use std::convert::TryFrom;
 
     #[derive(Clone)]
@@ -158,6 +156,13 @@ pub mod bdd {
 
         pub unsafe fn get_node_unchecked(&self, id: NodeId) -> &PackedBddNode {
             unsafe { self.nodes.get_unchecked(id.into_usize()) }
+        }
+
+        pub fn prefetch(&self, id: NodeId) {
+            unsafe {
+                let pointer: *const PackedBddNode = self.nodes.get_unchecked(id.into_usize());
+                std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
+            }
         }
 
         pub fn node_count(&self) -> usize {
@@ -358,26 +363,64 @@ pub mod bdd {
     }
 }
 
-/// A simple function for testing performance of BDD traversal.
-pub fn dfs_node_count(bdd: &Bdd) -> usize {
-    let mut count = 0;
-    let mut stack = Vec::with_capacity(bdd.get_height());
-    let mut expanded = vec![false; bdd.node_count()];
+pub mod bdd_dfs {
+    use super::bdd::Bdd;
+    use super::node_id::NodeId;
 
-    stack.push(bdd.get_root_id());
-
-    while let Some(top) = stack.pop() {
-        if !expanded[top.into_usize()] {
-            expanded[top.into_usize()] = true;
-            count += 1;
-            if !top.is_terminal() {
-                let node = unsafe { bdd.get_node_unchecked(top) };
-                let (_, low, high) = node.unpack();
-                stack.push(high);
-                stack.push(low);
-            }
-        }
+    pub struct UnsafeStack<T: Sized + Copy> {
+        index_after_last: usize,
+        items: Vec<T>
     }
 
-    count
+    impl <T: Sized + Copy> UnsafeStack<T> {
+
+        pub fn new(capacity: usize) -> UnsafeStack<T> {
+            let mut items = Vec::with_capacity(capacity);
+            unsafe { items.set_len(capacity); }
+            UnsafeStack {
+                items, index_after_last: 0,
+            }
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.index_after_last == 0
+        }
+
+        pub fn push(&mut self, item: T) {
+            let slot = unsafe { self.items.get_unchecked_mut(self.index_after_last) };
+            *slot = item;
+            self.index_after_last += 1;
+        }
+
+        pub fn pop(&mut self) -> T {
+            self.index_after_last -= 1;
+            unsafe { *self.items.get_unchecked(self.index_after_last) }
+        }
+
+    }
+
+    /// A simple function for testing performance of BDD traversal.
+    pub fn dfs_node_count(bdd: &Bdd) -> usize {
+        let mut count = 0;
+        let mut stack = UnsafeStack::<NodeId>::new(bdd.get_height() + 1);
+        let mut expanded = vec![false; bdd.node_count()];
+
+        stack.push(bdd.get_root_id());
+
+        while !stack.is_empty() {
+            let top = stack.pop();
+            let is_expanded = unsafe { expanded.get_unchecked_mut(top.into_usize()) };
+            if !*is_expanded {
+                *is_expanded = true;
+                count += 1;
+                if !top.is_terminal() {
+                    let node = unsafe { bdd.get_node_unchecked(top) };
+                    stack.push(node.get_high_link());
+                    stack.push(node.get_low_link());
+                }
+            }
+        }
+
+        count
+    }
 }

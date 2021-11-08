@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use binary_decision_diagrams::perf_testing::dfs_node_count;
+use binary_decision_diagrams::perf_testing::bdd_dfs::dfs_node_count;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -58,7 +58,7 @@ fn main() {
             .unwrap();
         println!("Right ready: {}", right.node_count());
 
-        let left = left.sort_postorder();
+        let left = left.sort_preorder();
 
         println!("warmup run...");
         benchmark_code(&left, &right);
@@ -81,8 +81,10 @@ fn main() {
         let cache_misses = cache_misses.end(i_cache_misses);
         let ipc = (instructions as f64) / (cycles as f64);
         let hit_rate = 100.0 - (100.0 * (cache_misses as f64) / (cache_references as f64));
+        let instructions_per_node = (instructions as f64) / (left.node_count() as f64);
+        let cycles_per_node = (cycles as f64) / (left.node_count() as f64);
 
-        println!("| {} | {} | {} | {} | {} | {} | {:.2} | {:.2} |",
+        println!("| {} | {} | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} |",
                  benchmark,
                  left.node_count(),
                  cycles,
@@ -90,7 +92,9 @@ fn main() {
                  cache_references,
                  cache_misses,
                  ipc,
-                 hit_rate
+                 hit_rate,
+                 instructions_per_node,
+                 cycles_per_node,
         )
 
     }
