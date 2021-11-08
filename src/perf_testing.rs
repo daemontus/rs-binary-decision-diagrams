@@ -439,6 +439,7 @@ pub mod coupled_dfs {
 
     impl Cache {
         pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        const HASH_BLOCK: u64 = 1 << 14;
 
         pub fn new(capacity: usize) -> Cache {
             Cache {
@@ -459,12 +460,15 @@ pub mod coupled_dfs {
             }
         }
 
-        // A variant of a basic Knuth integer hashing algorithm.
+        // Locality sensitive hashing algorithm, assuming that left nodes are a
+        // mostly-growing sequence.
         fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
             // The rotation ensures that we don't get an obvious collision when left == right.
             let left_hash = u64::from(task.0).rotate_left(7).wrapping_mul(Self::SEED);
             let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
-            left_hash.bitxor(right_hash).rem(self.capacity) as usize
+            let block_index: u64 = left_hash.bitxor(right_hash).rem(Self::HASH_BLOCK);
+            let block_start: u64 = u64::from(task.0);
+            (block_start + block_index).rem(self.capacity) as usize
         }
 
     }
