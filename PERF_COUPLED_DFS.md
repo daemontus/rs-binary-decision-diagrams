@@ -54,6 +54,6 @@ If we eliminate bounds checking where possible, add a little prefetching and opt
 | large-same-larger.96221488 | 182610133 | 5815784497 | 14956392931 | 551605989 | 64741676 | 2.57 | 88.26 | 81.90 | 31.85 |
 | large-same-same.176900752 | 180363858 | 7137708151 | 16113311498 | 912219354 | 104313099 | 2.26 | 88.56 | 89.34 | 39.57 |
 
-We still have some IPC reserves, but our L3 hit rate is quite good and overall this is not too bad (considering we are comparing with a super basic traversal). 
+We still have some IPC reserves, but our L3 hit rate is quite good and overall this is not too bad (considering we are comparing with a super basic traversal). Also, note that the collision rate in the final algorithm is 3-7%, which is all right. However, keep in mind that on a truly representative sample inputs, we would have to track this and expand the cache accordingly. 
 
 On older CPUs (Zen1), the progression is a bit less impressive in absolute numbers, but we are still talking about going from 580-920 C/Node and 0.6-0.3 IPC to 55-65 C/Node and 1.2-1.3 IPC. But the cache hit rates look good, so I'm not sure what is going on there, maybe just an older core with larger instruction latencies. Dependencies in the loop body are an obvious problem, but I'm not going to mess with that since they are not going to matter for the actual `apply` algorithm. 
