@@ -379,6 +379,14 @@ pub mod bdd_dfs {
             self.index_after_last == 0
         }
 
+        pub fn peek(&mut self ) -> &mut T {
+            unsafe { self.items.get_unchecked_mut(self.index_after_last - 1) }
+        }
+
+        pub fn peek_at(&mut self, offset: usize) -> &mut T {
+            unsafe { self.items.get_unchecked_mut(self.index_after_last - offset) }
+        }
+
         pub fn push(&mut self, item: T) {
             let slot = unsafe { self.items.get_unchecked_mut(self.index_after_last) };
             *slot = item;
@@ -520,18 +528,158 @@ pub mod coupled_dfs {
     }
 }
 
+pub mod node_cache {
+    use std::num::NonZeroU64;
+    use super::packed_bdd_node::PackedBddNode;
+    use super::node_id::NodeId;
+    use std::ops::{BitXor, Rem};
+    use std::cmp::max;
+
+    pub struct NodeCache {
+        capacity: NonZeroU64,
+        index_after_last: usize,
+        nodes: Vec<(PackedBddNode, NodeCacheSlot)>,
+        table: Vec<NodeCacheSlot>,  // Hashtable pointing to the beginning of linked-lists in the nodes array.
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    pub struct NodeCacheSlot(u64);
+
+    impl NodeCacheSlot {
+        pub const UNDEFINED: NodeCacheSlot = NodeCacheSlot(u64::MAX);
+
+        /// The conversion to a valid index. It can be safely done because we only support 64-bit machines.
+        pub fn into_usize(self) -> usize {
+            self.0 as usize
+        }
+
+        pub fn is_undefined(&self) -> bool {
+            *self == Self::UNDEFINED
+        }
+    }
+
+    impl From<u64> for NodeCacheSlot {
+        fn from(value: u64) -> Self {
+            NodeCacheSlot(value)
+        }
+    }
+
+    impl From<usize> for NodeCacheSlot {
+        fn from(value: usize) -> Self {
+            NodeCacheSlot(value as u64)
+        }
+    }
+
+    impl From<NodeCacheSlot> for u64 {
+        fn from(value: NodeCacheSlot) -> Self {
+            value.0
+        }
+    }
+
+    /// This conversion is valid for cache slot ids that have a node inserted at that position.
+    impl From<NodeCacheSlot> for NodeId {
+        fn from(value: NodeCacheSlot) -> Self {
+            NodeId::from(u64::from(value))
+        }
+    }
+
+    impl NodeCache {
+        const HASH_BLOCK: u64 = 1 << 13;
+        const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+
+        pub fn new(table_capacity: usize, node_capacity: usize) -> NodeCache {
+            debug_assert!(node_capacity > 2);
+            debug_assert!(table_capacity > 0);
+            NodeCache {
+                capacity: NonZeroU64::new(table_capacity as u64).unwrap(),
+                index_after_last: 2,    // Initially, there are two nodes already.
+                table: vec![NodeCacheSlot::UNDEFINED; table_capacity],
+                nodes: {
+                    let mut result = Vec::with_capacity(node_capacity);
+                    unsafe { result.set_len(node_capacity); }
+                    result[0] = (PackedBddNode::ZERO, NodeCacheSlot::UNDEFINED);
+                    result[1] = (PackedBddNode::ONE, NodeCacheSlot::UNDEFINED);
+                    result
+                }
+            }
+        }
+
+        pub fn len(&self) -> usize {
+            self.index_after_last
+        }
+
+        /// Try to add a node to the cache. If successful (or node exists), returns a `NodeId`.
+        /// Otherwise, return a `NodeCacheSlot` that should be tried during next attempt.
+        pub fn ensure(&mut self, node: &PackedBddNode) -> Result<NodeId, NodeCacheSlot> {
+            let hash_slot = self.hash_position(&node);
+            let linked_list_start = unsafe { self.table.get_unchecked_mut(hash_slot) };
+            if linked_list_start.is_undefined() {
+                // This hash has not been seen before. Create a new node for it.
+                let fresh_slot = NodeCacheSlot::from(self.index_after_last);
+                *linked_list_start = fresh_slot;
+                self.index_after_last += 1;
+
+                let slot_value = unsafe { self.nodes.get_unchecked_mut(fresh_slot.into_usize()) };
+                *slot_value = (node.clone(), NodeCacheSlot::UNDEFINED);
+
+                Ok(fresh_slot.into())
+            } else {
+                // There already is a value for this hash, try later.
+                Err(*linked_list_start)
+            }
+        }
+
+        /// Try to add a node to the cache at the given slot. The same as `ensure`, but we are not
+        /// starting a new linked list, only continuing an existing one.
+        pub fn ensure_at(&mut self, node: &PackedBddNode, slot: NodeCacheSlot) -> Result<NodeId, NodeCacheSlot> {
+            let slot_value = unsafe { self.nodes.get_unchecked_mut(slot.into_usize()) };
+            if &slot_value.0 == node {
+                // This is a duplicate insertion, the node is already here.
+                Ok(slot.into())
+            } else if !slot_value.1.is_undefined() {
+                // The node is not here, but there is another link in the chain that we can try.
+                Err(slot_value.1)
+            } else {
+                // The chain ends here and we still haven't found the node. Create it.
+                let fresh_slot = NodeCacheSlot::from(self.index_after_last);
+                slot_value.1 = fresh_slot;
+                self.index_after_last += 1;
+
+                let slot_value = unsafe { self.nodes.get_unchecked_mut(fresh_slot.into_usize()) };
+                *slot_value = (node.clone(), NodeCacheSlot::UNDEFINED);
+
+                Ok(fresh_slot.into())
+            }
+        }
+
+        fn hash_position(&self, key: &PackedBddNode) -> usize {
+            let low_link: u64 = key.get_low_link().into();
+            let high_link: u64 = key.get_high_link().into();
+            let low_hash = low_link.rotate_left(32).wrapping_mul(Self::SEED);
+            let high_hash = high_link.wrapping_mul(Self::SEED);
+            let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
+            let base = max(low_link, high_link);
+            (base + block_index).rem(self.capacity) as usize
+        }
+
+    }
+}
+
 pub mod apply {
     use super::bdd::Bdd;
     use super::node_id::NodeId;
-    use std::collections::HashMap;
-    use fxhash::FxBuildHasher;
     use super::packed_bdd_node::PackedBddNode;
-    use std::cmp::min;
     use std::ops::Rem;
     use std::num::NonZeroU64;
+    use super::bdd_dfs::UnsafeStack;
+    use super::variable_id::VariableId;
+    use super::node_cache::NodeCache;
+    use std::result::Result::Err;
 
+    #[derive(Copy, Clone, Eq, PartialEq)]
     struct ApplyTask {
         offset: u8,
+        variable: VariableId,
         task: (NodeId, NodeId),
         results: [NodeId; 2],
     }
@@ -542,6 +690,7 @@ pub mod apply {
             ApplyTask {
                 offset: offset << 1,
                 task,
+                variable: VariableId::UNDEFINED,
                 results: [NodeId::UNDEFINED, NodeId::UNDEFINED]
             }
         }
@@ -600,14 +749,15 @@ pub mod apply {
     pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
         let height_limit = left_bdd.get_height() + right_bdd.get_height();
         let mut task_cache = TaskCache::new(left_bdd.node_count());
-        let mut node_cache: HashMap<PackedBddNode, NodeId, _> = HashMap::with_capacity_and_hasher(left_bdd.node_count(), FxBuildHasher::default());
+        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
-        let mut next_node_id: u64 = 2;
 
-        let mut stack = Vec::with_capacity(height_limit);
+        let mut stack = UnsafeStack::new(height_limit);
         stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
 
-        while let Some(top) = stack.last_mut() {
+        while !stack.is_empty() {
+            let top = stack.peek();
+
             let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
             let mut result = NodeId::UNDEFINED;
             if top.offset & 1 == 0 {
@@ -635,12 +785,15 @@ pub mod apply {
                         // This explicit "switch" is slightly faster. Not sure exactly why, but
                         // it is probably easier to branch predict.
                         if l_var == r_var {
+                            top.variable = l_var;
                             stack.push(ApplyTask::new(1, (l_high, r_high)));
                             stack.push(ApplyTask::new(2, (l_low, r_low)));
                         } else if l_var < r_var {
+                            top.variable = l_var;
                             stack.push(ApplyTask::new(1, (l_high, right)));
                             stack.push(ApplyTask::new(2, (l_low, right)));
                         } else {
+                            top.variable = r_var;
                             stack.push(ApplyTask::new(1, (left, r_high)));
                             stack.push(ApplyTask::new(2, (left, r_low)));
                         }
@@ -653,32 +806,21 @@ pub mod apply {
                     task_cache.write(top.task, result_low);
                     result = result_low;
                 } else {
-                    let (left, right) = top.task;
-                    let left_node = unsafe { left_bdd.get_node_unchecked(left) };
-                    let right_node = unsafe { right_bdd.get_node_unchecked(right) };
+                    let node = PackedBddNode::pack(top.variable, result_low, result_high);
 
-                    let variable = min(left_node.get_variable(), right_node.get_variable());
-
-                    let node = PackedBddNode::pack(variable, result_low, result_high);
-
-                    if let Some(&existing) = node_cache.get(&node) {
-                        task_cache.write(top.task, existing);
-                        result = existing;
-                    } else {
-                        let new_id = NodeId::from(next_node_id);
-                        next_node_id += 1;
-                        task_cache.write(top.task, new_id);
-                        node_cache.insert(node, new_id);
-                        result = new_id;
+                    let mut cached = node_cache.ensure(&node);
+                    while let Err(slot) = cached {
+                        cached = node_cache.ensure_at(&node, slot);
                     }
+                    result = cached.unwrap();
+                    task_cache.write(top.task, result);
                 }
             }
 
             if !result.is_undefined() {
                 stack.pop();
                 if !stack.is_empty() {
-                    let parent_index = stack.len() - offset;
-                    let parent = &mut stack[parent_index];
+                    let parent = stack.peek_at(offset);
                     // high = 1, low = 2, so they will be saved in reverse order.
                     parent.results[offset - 1] = result;
                 }
