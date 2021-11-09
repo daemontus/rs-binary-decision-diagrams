@@ -38,3 +38,12 @@ This is still much more than pure coupled DFS, but at least we are performing so
 The question is, how much of this can be "saved" by going fully out-of-order. Because the number of instructions will certainly be larger, so the question is how much of it can be absorbed by improvements in IPC. By running two instances of the same algorithm concurrently, the answer appears to be "not much", but hopefully there is a way around that.
 
 Also, interestingly, rewriting the algorithm to use stack more "natively" yields worse performance and higher instruction count (see `9b0dd7f5f3a73c5d034bc29eaf9f3605d3afdcbd`). Allocating a single big "task object" actually appears to be quite efficient. However, one way to save a few instructions is to realize that the task cache can be modified such that it does not need modulo. This avoids a few divisions. Finally, various attempts at loop unrolling also seem to do more harm than good.
+
+So far, the best in-order design that we have is capable of this:
+
+| Benchmark | Tasks | Nodes | Cycles | Instructions | L3 References | L3 Misses | IPC | L3 hit | I/Task | C/Task |
+| --------- | ----- | ----- | ------ | ------------ | ------------- | --------- | --- | ------ | ------ | ------ |
+| large-same-same.12239682 | 18488252 | 12239682 | 2438729911 | 4141600774 | 151919123 | 34253922 | 1.70 | 77.45 | 224.01 | 131.91 |
+| large-same-larger.12779394 | 24508505 | 17347650 | 3712414971 | 5508428188 | 206362767 | 49256678 | 1.48 | 76.13 | 224.76 | 151.47 |
+| large-same-larger.96221488 | 182453847 | 176899024 | 34970435426 | 42998464443 | 1805149277 | 420372874 | 1.23 | 76.71 | 235.67 | 191.67 |
+| large-same-same.176900752 | 180335595 | 176900752 | 30368388034 | 43872237559 | 2177768670 | 490504172 | 1.44 | 77.48 | 243.28 | 168.40 |
