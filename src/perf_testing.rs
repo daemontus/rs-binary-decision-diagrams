@@ -864,15 +864,15 @@ pub mod ooo_apply {
     use super::bdd::Bdd;
     use super::node_id::NodeId;
     use super::variable_id::VariableId;
-    use super::task_cache::TaskCache;
     use super::bdd_dfs::UnsafeStack;
+    use std::ops::Rem;
 
     const ROB_MASK: u64 = 1 << 63;
 
     // Rob slot is stored as is, node id has the highest bit set to 1. Intuition is
     // that rob slot can be checked repeatedly, while result is read only once.
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-    struct NodeIdOrRobSlot(u64);
+    pub struct NodeIdOrRobSlot(u64);
 
     impl NodeIdOrRobSlot {
         pub const UNDEFINED: NodeIdOrRobSlot = NodeIdOrRobSlot(u64::MAX);
@@ -929,8 +929,72 @@ pub mod ooo_apply {
         }
     }
 
+    pub struct TaskCache {
+        items: Vec<((NodeId, NodeId), NodeIdOrRobSlot)>
+    }
+
+    impl TaskCache {
+        pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        const HASH_BLOCK: u64 = 1 << 13;
+
+        pub fn new(capacity: usize) -> TaskCache {
+            // The extra capacity ensures that we never have to modulo our hashes, since
+            // hash block can be performed via bit-and, and the overall hash will be always ok.
+            TaskCache {
+                items: vec![((NodeId::ZERO, NodeId::ZERO), NodeIdOrRobSlot::from(NodeId::ZERO)); capacity + (Self::HASH_BLOCK as usize)]
+            }
+        }
+
+        pub fn read(&self, task: (NodeId, NodeId)) -> (NodeIdOrRobSlot, usize) {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                (slot_value.1, slot)
+            } else {
+                (NodeIdOrRobSlot::UNDEFINED, slot)
+            }
+        }
+
+        pub fn read_at(&self, task: (NodeId, NodeId), slot: usize) -> NodeIdOrRobSlot {
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                slot_value.1
+            } else {
+                NodeIdOrRobSlot::UNDEFINED
+            }
+        }
+
+        pub fn write(&mut self, task: (NodeId, NodeId), result: NodeIdOrRobSlot) {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        pub fn write_at(&mut self, slot: usize, task: (NodeId, NodeId), result: NodeIdOrRobSlot) {
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        // Locality sensitive hashing algorithm, assuming that left nodes are a
+        // mostly-growing sequence.
+        fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
+            let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
+            let block_index = right_hash.rem(Self::HASH_BLOCK);
+            let block_start: u64 = u64::from(task.0);
+
+            unsafe {
+                // Usually not that important, but seems to be actually helping for large BDDs.
+                let pointer: *const ((NodeId, NodeId), NodeIdOrRobSlot) =
+                    self.items.get_unchecked((block_start as usize) + 128);
+                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
+            }
+            (block_start + block_index) as usize
+        }
+
+    }
+
     pub struct ReorderBuffer {
-        buffer: Vec<u64>,
+        buffer: Vec<(u64, u16)>,
         next_free: RobSlot,
     }
 
@@ -965,13 +1029,13 @@ pub mod ooo_apply {
 
         pub fn new(capacity: usize) -> ReorderBuffer {
             // Create a linked list starting in zero and going through all slots in the vector.
-            let mut list = vec![0; capacity];
+            let mut list = vec![(0, 0); capacity];
             for i in 0..list.len() {
-                list[i] = (i + 1) as u64;
+                list[i] = ((i + 1) as u64, 0);
             }
             // Last element has no successor, so we set it to u64::MAX.
             let last_index = list.len() - 1;
-            list[last_index] = u64::MAX;
+            list[last_index] = (u64::MAX, 0);
             ReorderBuffer {
                 buffer: list,
                 next_free: RobSlot(0)
@@ -982,37 +1046,46 @@ pub mod ooo_apply {
             self.next_free == RobSlot::UNDEFINED
         }
 
-        pub fn allocate_slot(&mut self) -> RobSlot {
+        pub fn allocate_and_ref_slot(&mut self) -> RobSlot {
             debug_assert!(!self.is_full());
             let slot_id = self.next_free;
             let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id.into_usize()) };
 
             // Free slots are a linked list, hence slot value is either next free slot or undefined.
-            self.next_free = RobSlot::from(*slot_value as u32);
+            self.next_free = RobSlot::from(slot_value.0 as u32);
             // Erase the linked list pointer, meaning that this slot contains an unfinished task.
-            *slot_value = u64::MAX;
+            *slot_value = (u64::MAX, 1);
             // Return a pointer to the newly allocated ROB slot.
             slot_id
         }
 
-        pub fn free_slot(&mut self, slot: RobSlot) {
+        pub fn ref_slot(&mut self, slot: RobSlot) {
+            let slot_id: u32 = slot.into();
+            let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id as usize) };
+            slot_value.1 += 1;
+        }
+
+        pub fn deref_slot(&mut self, slot: RobSlot) {
             let slot_id: u32 = slot.into();
             debug_assert!((slot_id as usize) < self.buffer.len()); // Check bounds.
             let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id as usize) };
 
             // Erase slot value and replace with pointer of next free slot.
-            *slot_value = u64::from(u32::from(self.next_free));
-            // Update next free value such that it points to this newly freed slot.
-            self.next_free = slot;
+            slot_value.1 -= 1;
+            if slot_value.1 == 0 {
+                slot_value.0 = u64::from(u32::from(self.next_free));
+                // Update next free value such that it points to this newly freed slot.
+                self.next_free = slot;
+            }
         }
 
         pub fn get_slot_value(&self, slot: RobSlot) -> NodeId {
-            NodeId::from(unsafe { *self.buffer.get_unchecked(slot.0 as usize) })
+            NodeId::from(unsafe { self.buffer.get_unchecked(slot.0 as usize).0 })
         }
 
         pub fn set_slot_value(&mut self, slot: RobSlot, id: NodeId) {
             let slot_value = unsafe { self.buffer.get_unchecked_mut(slot.0 as usize) };
-            *slot_value = id.into();
+            slot_value.0 = id.into();
         }
 
     }
@@ -1135,6 +1208,9 @@ pub mod ooo_apply {
                 } else {
                     let (cached, slot) = task_cache.read(top.task);
                     if !cached.is_undefined() {
+                        if cached.is_rob() {
+                            rob.ref_slot(cached.as_rob());
+                        }
                         result = cached.into();
                     } else {
                         top.task_cache_slot = slot;
@@ -1166,9 +1242,10 @@ pub mod ooo_apply {
                 }
             } else if !queue.is_full() {
                 // TODO: Prove that ROB cannot be full at this point.
-                let rob_slot = rob.allocate_slot();
+                let rob_slot = rob.allocate_and_ref_slot();
                 result = rob_slot.into();
                 queue.enqueue_for_execution(rob_slot, top);
+                task_cache.write_at(top.task_cache_slot, top.task, rob_slot.into());
             }
 
             if !result.is_undefined() {
@@ -1193,14 +1270,14 @@ pub mod ooo_apply {
                     if result_low == result_high {
                         rob.set_slot_value(*dest, result_low);
                         *dest = RobSlot::UNDEFINED; // Mark the task as retired.
-                        task_cache.write_at(task.task_cache_slot, task.task, result_low);
+                        task_cache.write_at(task.task_cache_slot, task.task, result_low.into());
                     } else {
                         match node_cache.ensure(&PackedBddNode::pack(task.variable, result_low, result_high)) {
                             Ok(id) => {
                                 // Node is already cached, just update result.
                                 rob.set_slot_value(*dest, id);
                                 *dest = RobSlot::UNDEFINED;
-                                task_cache.write_at(task.task_cache_slot, task.task, id);
+                                task_cache.write_at(task.task_cache_slot, task.task, id.into());
                             }
                             Err(slot) => {
                                 *node_cache_slot = slot;
@@ -1213,7 +1290,7 @@ pub mod ooo_apply {
                         let slot = result_low.as_rob();
                         let result = rob.get_slot_value(slot);
                         if !result.is_undefined() {
-                            rob.free_slot(slot);
+                            rob.deref_slot(slot);
                             task.results[1] = result.into();
                         }
                     }
@@ -1221,7 +1298,7 @@ pub mod ooo_apply {
                         let slot = result_high.as_rob();
                         let result = rob.get_slot_value(slot);
                         if !result.is_undefined() {
-                            rob.free_slot(slot);
+                            rob.deref_slot(slot);
                             task.results[0] = result.into();
                         }
                     }
@@ -1238,7 +1315,7 @@ pub mod ooo_apply {
                     match node_cache.ensure_at(&PackedBddNode::pack(task.variable, result_low, result_high), *node_cache_slot) {
                         Ok(id) => {
                             rob.set_slot_value(*dest, id);
-                            task_cache.write_at(task.task_cache_slot, task.task, id);
+                            task_cache.write_at(task.task_cache_slot, task.task, id.into());
                             queue.retire();
                         }
                         Err(slot) => {
