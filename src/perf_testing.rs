@@ -669,33 +669,97 @@ pub mod apply {
     use super::bdd::Bdd;
     use super::node_id::NodeId;
     use super::packed_bdd_node::PackedBddNode;
-    use std::ops::Rem;
-    use std::num::NonZeroU64;
-    use super::bdd_dfs::UnsafeStack;
+    use std::ops::{Not, Rem};
     use super::variable_id::VariableId;
     use super::node_cache::NodeCache;
     use std::result::Result::Err;
 
-    #[derive(Copy, Clone, Eq, PartialEq)]
-    struct ApplyTask {
-        offset: u8,
-        variable: VariableId,
-        task: (NodeId, NodeId),
-        results: [NodeId; 2],
-        task_cache_slot: usize,
+    /// A version of the unsafe stack which has a variable item size to avoid unnecessary
+    /// memory initialization and overall streamline the algorithm.
+    struct TaskStack {
+        index_after_last: usize,
+        items: Vec<u64>
     }
 
-    impl ApplyTask {
+    impl TaskStack {
+        const FRESH_BIT: u64 = 1 << 63;
 
-        pub fn new(offset: u8, task: (NodeId, NodeId)) -> ApplyTask {
-            ApplyTask {
-                offset: offset << 1,
-                task,
-                variable: VariableId::UNDEFINED,
-                results: [NodeId::UNDEFINED, NodeId::UNDEFINED],
-                task_cache_slot: 0,
+        pub fn new(capacity: usize) -> TaskStack {
+            let capacity = 4 * capacity;    // Every task can push up to 4 values.
+            let mut items = Vec::with_capacity(capacity);
+            unsafe { items.set_len(capacity); }
+            TaskStack {
+                index_after_last: 0,
+                items
             }
         }
+
+        pub fn has_last_remaining(&self) -> bool {
+            self.index_after_last == 1
+        }
+
+        pub fn push_task(&mut self, task: (NodeId, NodeId)) {
+            let slot_1 = unsafe { self.items.get_unchecked_mut(self.index_after_last) };
+            *slot_1 = task.0.into();
+            let slot_2 = unsafe { self.items.get_unchecked_mut(self.index_after_last + 1) };
+            *slot_2 = u64::from(task.1) | Self::FRESH_BIT;
+            self.index_after_last += 2;
+        }
+
+        pub fn push_task_metadata(&mut self, variable: VariableId, cache_slot: usize) {
+            let slot_1 = unsafe { self.items.get_unchecked_mut(self.index_after_last) };
+            *slot_1 = u64::from(u32::from(variable));
+            let slot_2 = unsafe { self.items.get_unchecked_mut(self.index_after_last + 1) };
+            *slot_2 = cache_slot as u64;
+            self.index_after_last += 2;
+        }
+
+        pub fn pop_task_metadata(&mut self) -> (VariableId, usize) {
+            self.index_after_last -= 2;
+            let slot_1 = unsafe { self.items.get_unchecked(self.index_after_last) };
+            let slot_2 = unsafe { self.items.get_unchecked(self.index_after_last + 1) };
+            (VariableId::from(*slot_1 as u32), *slot_2 as usize)
+        }
+
+        pub fn pop_task_results(&mut self) -> (NodeId, NodeId) {
+            self.index_after_last -= 2;
+            let slot_1 = unsafe { self.items.get_unchecked(self.index_after_last) };
+            let slot_2 = unsafe { self.items.get_unchecked(self.index_after_last + 1) };
+            (NodeId::from(*slot_1), NodeId::from(*slot_2))
+        }
+
+        pub fn pop_task_with_result(&mut self, result: NodeId) {
+            self.index_after_last -= 2;
+            if self.can_decode() {
+                unsafe {
+                    let slot_1: *mut u64 = self.items.get_unchecked_mut(self.index_after_last);
+                    let slot_2: *mut u64 = self.items.get_unchecked_mut(self.index_after_last - 1);
+                    let slot_3: *mut u64 = self.items.get_unchecked_mut(self.index_after_last - 2);
+                    *slot_1 = *slot_2;
+                    *slot_2 = *slot_3;
+                    *slot_3 = result.into();
+                }
+            } else {
+                let slot_1 = unsafe { self.items.get_unchecked_mut(self.index_after_last) };
+                *slot_1 = result.into();
+            }
+            self.index_after_last += 1;
+        }
+
+        pub fn can_decode(&self) -> bool {
+            unsafe { self.index_after_last > 0 && self.items.get_unchecked(self.index_after_last - 1) & Self::FRESH_BIT != 0 }
+        }
+
+        pub fn can_execute(&self) -> bool {
+            unsafe { self.index_after_last > 0 && self.items.get_unchecked(self.index_after_last - 1) & Self::FRESH_BIT == 0 }
+        }
+
+        pub fn peek_task(&self) -> (NodeId, NodeId) {
+            let slot_1 = unsafe { self.items.get_unchecked(self.index_after_last - 2) };
+            let slot_2 = unsafe { self.items.get_unchecked(self.index_after_last - 1) };
+            (NodeId::from(*slot_1), NodeId::from(slot_2 & Self::FRESH_BIT.not()))
+        }
+
     }
 
     struct TaskCache {
@@ -757,28 +821,24 @@ pub mod apply {
         let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
 
-        let mut stack = UnsafeStack::new(height_limit);
-        stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
+        let mut stack = TaskStack::new(height_limit);
+        stack.push_task((left_bdd.get_root_id(), right_bdd.get_root_id()));
 
-        while !stack.is_empty() {
-            let top = stack.peek();
+        loop {
 
-            let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
-            let mut result = NodeId::UNDEFINED;
-            if top.offset & 1 == 0 {
-                top.offset |= 1;   // mark task as expanded
+            if stack.can_decode() {
+                let (left, right) = stack.peek_task();
+                //println!("Decode {:?} {:?}", left, right);
 
-                let (left, right) = top.task;
                 if left.is_one() || right.is_one() {            // Certain one
-                    result = NodeId::ONE;
+                    stack.pop_task_with_result(NodeId::ONE);
                 } else if left.is_zero() && right.is_zero() {   // Certain zero
-                    result = NodeId::ZERO;
+                    stack.pop_task_with_result(NodeId::ZERO);
                 } else {
-                    let (cached, slot) = task_cache.read(top.task);
+                    let (cached, slot) = task_cache.read((left, right));
                     if !cached.is_undefined() {
-                        result = cached;
+                        stack.pop_task_with_result(cached);
                     } else {
-                        top.task_cache_slot = slot;
                         // Actually expand.
                         task_count += 1;
 
@@ -791,46 +851,46 @@ pub mod apply {
                         // This explicit "switch" is slightly faster. Not sure exactly why, but
                         // it is probably easier to branch predict.
                         if l_var == r_var {
-                            top.variable = l_var;
-                            stack.push(ApplyTask::new(1, (l_high, r_high)));
-                            stack.push(ApplyTask::new(2, (l_low, r_low)));
+                            stack.push_task_metadata(l_var, slot);
+                            stack.push_task((l_high, r_high));
+                            stack.push_task((l_low, r_low));
                         } else if l_var < r_var {
-                            top.variable = l_var;
-                            stack.push(ApplyTask::new(1, (l_high, right)));
-                            stack.push(ApplyTask::new(2, (l_low, right)));
+                            stack.push_task_metadata(l_var, slot);
+                            stack.push_task((l_high, right));
+                            stack.push_task((l_low, right));
                         } else {
-                            top.variable = r_var;
-                            stack.push(ApplyTask::new(1, (left, r_high)));
-                            stack.push(ApplyTask::new(2, (left, r_low)));
+                            stack.push_task_metadata(r_var, slot);
+                            stack.push_task((left, r_high));
+                            stack.push_task((left, r_low));
                         }
                     }
                 }
-            } else {
+            }
+
+            if stack.can_execute() {
                 // Task is decoded, we have to create a new node for it.
-                let (result_low, result_high) = (top.results[1], top.results[0]);
+                let (result_low, result_high) = stack.pop_task_results();
+                let (variable, cache_slot) = stack.pop_task_metadata();
+                let task = stack.peek_task();
+                //println!("Execute {:?} {:?}", task.0, task.1);
                 if result_low == result_high {
-                    task_cache.write_at(top.task_cache_slot, top.task, result_low);
-                    result = result_low;
+                    task_cache.write_at(cache_slot, task, result_low);
+                    stack.pop_task_with_result(result_low);
                 } else {
-                    let node = PackedBddNode::pack(top.variable, result_low, result_high);
+                    let node = PackedBddNode::pack(variable, result_low, result_high);
 
                     let mut cached = node_cache.ensure(&node);
                     while let Err(slot) = cached {
                         cached = node_cache.ensure_at(&node, slot);
                     }
-                    result = cached.unwrap();
-                    task_cache.write_at(top.task_cache_slot, top.task, result);
+                    let result = cached.unwrap();
+                    task_cache.write_at(cache_slot, task, result);
+                    stack.pop_task_with_result(result);
                 }
             }
 
-            if !result.is_undefined() {
-                stack.pop();
-                if !stack.is_empty() {
-                    let parent = stack.peek_at(offset);
-                    // high = 1, low = 2, so they will be saved in reverse order.
-                    let slot = unsafe { parent.results.get_unchecked_mut(offset - 1) };
-                    *slot = result;
-                }
+            if stack.has_last_remaining() {
+                break;
             }
         }
 

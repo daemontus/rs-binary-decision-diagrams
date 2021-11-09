@@ -26,13 +26,13 @@ fn main() {
         let mut split = benchmark.split(".");
         split.next();
         let left_path = format!("./bench_inputs/itgr/{}.and_not.left.bdd", benchmark);
-        let mut left =
+        let left =
             Bdd::try_from(std::fs::read_to_string(&left_path).unwrap().as_str()).unwrap();
         let left = left.sort_preorder();
         let right_path = format!("./bench_inputs/itgr/{}.and_not.right.bdd", benchmark);
-        let mut right =
+        let right =
             Bdd::try_from(std::fs::read_to_string(right_path).unwrap().as_str()).unwrap();
-        right = right.sort_preorder();
+        let right = right.sort_preorder();
         if left.node_count() == 326271 {
             let mut k = 0;
             let start = SystemTime::now();
