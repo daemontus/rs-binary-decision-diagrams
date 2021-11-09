@@ -1096,6 +1096,9 @@ pub mod ooo_apply {
         retire_head: usize,
         execution_head: usize,
         execution_tail: usize,
+        next_retire_head: usize,
+        next_execution_head: usize,
+        next_execution_tail: usize,
     }
 
     impl<const LEN: usize> ExecutionRetireQueue<LEN> {
@@ -1108,6 +1111,9 @@ pub mod ooo_apply {
                 retire_head: 0,
                 execution_head: 0,
                 execution_tail: 0,
+                next_retire_head: 0,
+                next_execution_head: 0,
+                next_execution_tail: 0,
             }
         }
 
@@ -1138,7 +1144,7 @@ pub mod ooo_apply {
             debug_assert!(!self.is_full());
             let slot = unsafe { self.queue.get_unchecked_mut(self.execution_tail) };
             *slot = (task.clone(), NodeCacheSlot::UNDEFINED, rob);
-            self.execution_tail = (self.execution_tail + 1) % LEN
+            self.next_execution_tail = (self.execution_tail + 1) % LEN
         }
 
         /// Obtain the reference to the task that should be executed next.
@@ -1157,7 +1163,7 @@ pub mod ooo_apply {
         /// task have been filled.
         pub fn move_to_retire(&mut self) {
             debug_assert!(self.can_execute());
-            self.execution_head = (self.execution_head + 1) % LEN;
+            self.next_execution_head = (self.execution_head + 1) % LEN;
         }
 
         /// Obtain the reference to the task that should be retired next.
@@ -1176,7 +1182,13 @@ pub mod ooo_apply {
         /// subsequent invariants.
         pub fn retire(&mut self) {
             debug_assert!(self.can_retire());
-            self.retire_head = (self.retire_head + 1) % LEN;
+            self.next_retire_head = (self.retire_head + 1) % LEN;
+        }
+
+        pub fn commit(&mut self) {
+            self.execution_head = self.next_execution_head;
+            self.retire_head = self.next_retire_head;
+            self.execution_tail = self.next_execution_tail;
         }
 
     }
@@ -1193,6 +1205,7 @@ pub mod ooo_apply {
         stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
 
         while !stack.is_empty() {
+            //println!("iter");
             let top = stack.peek();
 
             let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
@@ -1260,8 +1273,28 @@ pub mod ooo_apply {
 
             if queue.can_execute() {
                 let (task, node_cache_slot, dest) = queue.execute_task_reference();
-                let result_high = task.results[0];
-                let result_low = task.results[1];
+                let mut result_high = task.results[0];
+                let mut result_low = task.results[1];
+
+                if result_low.is_rob() {
+                    let slot = result_low.as_rob();
+                    let result = rob.get_slot_value(slot);
+                    if !result.is_undefined() {
+                        rob.deref_slot(slot);
+                        result_low = result.into();
+                        task.results[1] = result.into();
+                    }
+                } else if result_high.is_rob() {
+                    // For some reason, this statistically happens much less often,
+                    // so we don't check it explicitly, but only if we really have to.
+                    let slot = result_high.as_rob();
+                    let result = rob.get_slot_value(slot);
+                    if !result.is_undefined() {
+                        rob.deref_slot(slot);
+                        result_high = result.into();
+                        task.results[0] = result.into();
+                    }
+                }
 
                 if !result_low.is_rob() && !result_high.is_rob() {
                     let result_high = result_high.as_node();
@@ -1285,23 +1318,6 @@ pub mod ooo_apply {
                         }
                     }
                     queue.move_to_retire();
-                } else {
-                    if result_low.is_rob() {
-                        let slot = result_low.as_rob();
-                        let result = rob.get_slot_value(slot);
-                        if !result.is_undefined() {
-                            rob.deref_slot(slot);
-                            task.results[1] = result.into();
-                        }
-                    }
-                    if result_high.is_rob() {
-                        let slot = result_high.as_rob();
-                        let result = rob.get_slot_value(slot);
-                        if !result.is_undefined() {
-                            rob.deref_slot(slot);
-                            task.results[0] = result.into();
-                        }
-                    }
                 }
             }
 
@@ -1324,6 +1340,8 @@ pub mod ooo_apply {
                     }
                 }
             }
+
+            queue.commit();
 
         }
 
