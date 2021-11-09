@@ -39,7 +39,7 @@ pub mod node_id {
     impl NodeId {
         pub const ZERO: NodeId = NodeId(0);
         pub const ONE: NodeId = NodeId(1);
-        pub const UNDEFINED: NodeId = NodeId((1 << 48) - 1);
+        pub const UNDEFINED: NodeId = NodeId(u64::MAX);
 
         pub fn is_undefined(&self) -> bool {
             *self == Self::UNDEFINED
@@ -375,6 +375,10 @@ pub mod bdd_dfs {
             }
         }
 
+        pub fn len(&self) -> usize {
+            self.index_after_last
+        }
+
         pub fn is_empty(&self) -> bool {
             self.index_after_last == 0
         }
@@ -665,39 +669,11 @@ pub mod node_cache {
     }
 }
 
-pub mod apply {
-    use super::bdd::Bdd;
-    use super::node_id::NodeId;
-    use super::packed_bdd_node::PackedBddNode;
+pub mod task_cache {
     use std::ops::Rem;
-    use super::bdd_dfs::UnsafeStack;
-    use super::variable_id::VariableId;
-    use super::node_cache::NodeCache;
-    use std::result::Result::Err;
+    use super::node_id::NodeId;
 
-    #[derive(Copy, Clone, Eq, PartialEq)]
-    struct ApplyTask {
-        offset: u8,
-        variable: VariableId,
-        task: (NodeId, NodeId),
-        results: [NodeId; 2],
-        task_cache_slot: usize,
-    }
-
-    impl ApplyTask {
-
-        pub fn new(offset: u8, task: (NodeId, NodeId)) -> ApplyTask {
-            ApplyTask {
-                offset: offset << 1,
-                task,
-                variable: VariableId::UNDEFINED,
-                results: [NodeId::UNDEFINED, NodeId::UNDEFINED],
-                task_cache_slot: 0,
-            }
-        }
-    }
-
-    struct TaskCache {
+    pub struct TaskCache {
         items: Vec<((NodeId, NodeId), NodeId)>
     }
 
@@ -750,6 +726,39 @@ pub mod apply {
             (block_start + block_index) as usize
         }
 
+    }
+}
+
+pub mod apply {
+    use super::bdd::Bdd;
+    use super::node_id::NodeId;
+    use super::packed_bdd_node::PackedBddNode;
+    use super::bdd_dfs::UnsafeStack;
+    use super::variable_id::VariableId;
+    use super::node_cache::NodeCache;
+    use super::task_cache::TaskCache;
+    use std::result::Result::Err;
+
+    #[derive(Copy, Clone, Eq, PartialEq)]
+    struct ApplyTask {
+        offset: u8,
+        variable: VariableId,
+        task: (NodeId, NodeId),
+        results: [NodeId; 2],
+        task_cache_slot: usize,
+    }
+
+    impl ApplyTask {
+
+        pub fn new(offset: u8, task: (NodeId, NodeId)) -> ApplyTask {
+            ApplyTask {
+                offset: offset << 1,
+                task,
+                variable: VariableId::UNDEFINED,
+                results: [NodeId::UNDEFINED, NodeId::UNDEFINED],
+                task_cache_slot: 0,
+            }
+        }
     }
 
     pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
@@ -833,6 +842,402 @@ pub mod apply {
                     *slot = result;
                 }
             }
+        }
+
+        (node_cache.len(), task_count)
+    }
+
+}
+
+pub mod ooo_apply {
+    use crate::perf_testing::packed_bdd_node::PackedBddNode;
+    use super::node_cache::{NodeCache, NodeCacheSlot};
+    use super::bdd::Bdd;
+    use super::node_id::NodeId;
+    use super::variable_id::VariableId;
+    use super::task_cache::TaskCache;
+    use super::bdd_dfs::UnsafeStack;
+
+    const ROB_MASK: u64 = 1 << 63;
+
+    // Rob slot is stored as is, node id has the highest bit set to 1. Intuition is
+    // that rob slot can be checked repeatedly, while result is read only once.
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    struct NodeIdOrRobSlot(u64);
+
+    impl NodeIdOrRobSlot {
+        pub const UNDEFINED: NodeIdOrRobSlot = NodeIdOrRobSlot(u64::MAX);
+
+        pub fn is_rob(&self) -> bool {
+            self.0 & ROB_MASK != 0
+        }
+
+        pub fn is_undefined(&self) -> bool {
+            *self == Self::UNDEFINED
+        }
+
+        pub fn as_rob(self) -> RobSlot {
+            RobSlot::from(self.0 as u32)    // Will erase the highest bit.
+        }
+
+        pub fn as_node(self) -> NodeId {
+            NodeId::from(self.0)
+        }
+
+    }
+
+    impl From<NodeId> for NodeIdOrRobSlot {
+        fn from(value: NodeId) -> Self {
+            NodeIdOrRobSlot(u64::from(value))
+        }
+    }
+
+    impl From<RobSlot> for NodeIdOrRobSlot {
+        fn from(value: RobSlot) -> Self {
+            NodeIdOrRobSlot(u64::from(u32::from(value)) | ROB_MASK)
+        }
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq)]
+    pub struct ApplyTask {
+        offset: u8,
+        variable: VariableId,
+        task: (NodeId, NodeId),
+        results: [NodeIdOrRobSlot; 2],
+        task_cache_slot: usize,
+    }
+
+    impl ApplyTask {
+
+        pub fn new(offset: u8, task: (NodeId, NodeId)) -> ApplyTask {
+            ApplyTask {
+                offset: offset << 1,
+                task,
+                variable: VariableId::UNDEFINED,
+                results: [NodeIdOrRobSlot::UNDEFINED, NodeIdOrRobSlot::UNDEFINED],
+                task_cache_slot: usize::MAX,
+            }
+        }
+    }
+
+    pub struct ReorderBuffer {
+        buffer: Vec<u64>,
+        next_free: RobSlot,
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    pub struct RobSlot(u32);
+
+    impl RobSlot {
+        pub const UNDEFINED: RobSlot = RobSlot(u32::MAX);
+
+        pub fn into_usize(self) -> usize {
+            self.0 as usize
+        }
+
+        pub fn is_undefined(&self) -> bool {
+            *self == Self::UNDEFINED
+        }
+    }
+
+    impl From<u32> for RobSlot {
+        fn from(value: u32) -> Self {
+            RobSlot(value)
+        }
+    }
+
+    impl From<RobSlot> for u32 {
+        fn from(value: RobSlot) -> Self {
+            value.0
+        }
+    }
+
+    impl ReorderBuffer {
+
+        pub fn new(capacity: usize) -> ReorderBuffer {
+            // Create a linked list starting in zero and going through all slots in the vector.
+            let mut list = vec![0; capacity];
+            for i in 0..list.len() {
+                list[i] = (i + 1) as u64;
+            }
+            // Last element has no successor, so we set it to u64::MAX.
+            let last_index = list.len() - 1;
+            list[last_index] = u64::MAX;
+            ReorderBuffer {
+                buffer: list,
+                next_free: RobSlot(0)
+            }
+        }
+
+        pub fn is_full(&self) -> bool {
+            self.next_free == RobSlot::UNDEFINED
+        }
+
+        pub fn allocate_slot(&mut self) -> RobSlot {
+            debug_assert!(!self.is_full());
+            let slot_id = self.next_free;
+            let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id.into_usize()) };
+
+            // Free slots are a linked list, hence slot value is either next free slot or undefined.
+            self.next_free = RobSlot::from(*slot_value as u32);
+            // Erase the linked list pointer, meaning that this slot contains an unfinished task.
+            *slot_value = u64::MAX;
+            // Return a pointer to the newly allocated ROB slot.
+            slot_id
+        }
+
+        pub fn free_slot(&mut self, slot: RobSlot) {
+            let slot_id: u32 = slot.into();
+            debug_assert!((slot_id as usize) < self.buffer.len()); // Check bounds.
+            let slot_value = unsafe { self.buffer.get_unchecked_mut(slot_id as usize) };
+
+            // Erase slot value and replace with pointer of next free slot.
+            *slot_value = u64::from(u32::from(self.next_free));
+            // Update next free value such that it points to this newly freed slot.
+            self.next_free = slot;
+        }
+
+        pub fn get_slot_value(&self, slot: RobSlot) -> NodeId {
+            NodeId::from(unsafe { *self.buffer.get_unchecked(slot.0 as usize) })
+        }
+
+        pub fn set_slot_value(&mut self, slot: RobSlot, id: NodeId) {
+            let slot_value = unsafe { self.buffer.get_unchecked_mut(slot.0 as usize) };
+            *slot_value = id.into();
+        }
+
+    }
+
+
+    pub struct ExecutionRetireQueue<const LEN: usize> {
+        queue: Vec<(ApplyTask, NodeCacheSlot, RobSlot)>,
+        retire_head: usize,
+        execution_head: usize,
+        execution_tail: usize,
+    }
+
+    impl<const LEN: usize> ExecutionRetireQueue<LEN> {
+
+        pub fn new() -> ExecutionRetireQueue<LEN> {
+            let mut queue = Vec::with_capacity(LEN);
+            unsafe { queue.set_len(LEN); }
+            ExecutionRetireQueue {
+                queue,
+                retire_head: 0,
+                execution_head: 0,
+                execution_tail: 0,
+            }
+        }
+
+        /// Checks whether this execution-retire queue has free slots into which new tasks
+        /// can be enqueued.
+        pub fn is_full(&self) -> bool {
+            (self.execution_tail + 1) % LEN == self.retire_head
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.execution_tail == self.execution_head && self.execution_head == self.retire_head
+        }
+
+        /// Return true if the queue contains at least one task in the execution queue.
+        pub fn can_execute(&self) -> bool {
+            self.execution_head != self.execution_tail
+        }
+
+        /// Return true if the queue contains at least one task in the retire queue.
+        pub fn can_retire(&self) -> bool {
+            self.retire_head != self.execution_head
+        }
+
+        /// Add a new task into this queue, that will be marked for execution.
+        ///
+        /// **Safety:** The method can be only called on a queue that is not full!
+        pub fn enqueue_for_execution(&mut self, rob: RobSlot, task: &ApplyTask) {
+            debug_assert!(!self.is_full());
+            let slot = unsafe { self.queue.get_unchecked_mut(self.execution_tail) };
+            *slot = (task.clone(), NodeCacheSlot::UNDEFINED, rob);
+            self.execution_tail = (self.execution_tail + 1) % LEN
+        }
+
+        /// Obtain the reference to the task that should be executed next.
+        ///
+        /// **Safety:** If the method is called on an empty queue, the resulting reference is valid,
+        /// but its contents are undefined.
+        pub fn execute_task_reference(&mut self) -> &mut (ApplyTask, NodeCacheSlot, RobSlot) {
+            debug_assert!(self.can_execute());
+            unsafe { self.queue.get_unchecked_mut(self.execution_head) }
+        }
+
+        /// Move the head of the execution queue into the retire queue.
+        ///
+        /// **Safety:** The method is only valid when the execution queue is not empty. Additionally,
+        /// you should only call this once both result slots and a task cache slot of the pending
+        /// task have been filled.
+        pub fn move_to_retire(&mut self) {
+            debug_assert!(self.can_execute());
+            self.execution_head = (self.execution_head + 1) % LEN;
+        }
+
+        /// Obtain the reference to the task that should be retired next.
+        ///
+        /// **Safety:** If the method is called on an empty retire queue, the result is a valid
+        /// reference, but its contents are undefined.
+        pub fn retire_task_reference(&mut self) -> &mut (ApplyTask, NodeCacheSlot, RobSlot) {
+            debug_assert!(self.can_retire());
+            unsafe { self.queue.get_unchecked_mut(self.retire_head) }
+        }
+
+        /// Free up the head of the retirement queue.
+        ///
+        /// **Safety:** The operation is valid only if the retire queue is not empty. Additionally,
+        /// retiring a task before it is committed to node storage, task cache and ROB will break
+        /// subsequent invariants.
+        pub fn retire(&mut self) {
+            debug_assert!(self.can_retire());
+            self.retire_head = (self.retire_head + 1) % LEN;
+        }
+
+    }
+
+    pub fn ooo_apply(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
+        let height_limit = left_bdd.get_height() + right_bdd.get_height();
+        let mut task_cache = TaskCache::new(left_bdd.node_count());
+        let mut stack = UnsafeStack::new(height_limit);
+        let mut rob = ReorderBuffer::new(height_limit);
+        let mut queue = ExecutionRetireQueue::<64>::new();
+        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
+        let mut task_count = 0;
+
+        stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
+
+        while !stack.is_empty() {
+            let top = stack.peek();
+
+            let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
+            let mut result = NodeIdOrRobSlot::UNDEFINED;
+            if top.offset & 1 == 0 {
+                top.offset |= 1;   // mark task as expanded
+
+                let (left, right) = top.task;
+                if left.is_one() || right.is_one() {            // Certain one
+                    result = NodeId::ONE.into();
+                } else if left.is_zero() && right.is_zero() {   // Certain zero
+                    result = NodeId::ZERO.into();
+                } else {
+                    let (cached, slot) = task_cache.read(top.task);
+                    if !cached.is_undefined() {
+                        result = cached.into();
+                    } else {
+                        top.task_cache_slot = slot;
+                        // Actually expand.
+                        task_count += 1;
+
+                        let left_node = unsafe { left_bdd.get_node_unchecked(left) };
+                        let right_node = unsafe { right_bdd.get_node_unchecked(right) };
+
+                        let (l_var, l_low, l_high) = left_node.unpack();
+                        let (r_var, r_low, r_high) = right_node.unpack();
+
+                        // This explicit "switch" is slightly faster. Not sure exactly why, but
+                        // it is probably easier to branch predict.
+                        if l_var == r_var {
+                            top.variable = l_var;
+                            stack.push(ApplyTask::new(1, (l_high, r_high)));
+                            stack.push(ApplyTask::new(2, (l_low, r_low)));
+                        } else if l_var < r_var {
+                            top.variable = l_var;
+                            stack.push(ApplyTask::new(1, (l_high, right)));
+                            stack.push(ApplyTask::new(2, (l_low, right)));
+                        } else {
+                            top.variable = r_var;
+                            stack.push(ApplyTask::new(1, (left, r_high)));
+                            stack.push(ApplyTask::new(2, (left, r_low)));
+                        }
+                    }
+                }
+            } else if !rob.is_full() && !queue.is_full() {
+                let rob_slot = rob.allocate_slot();
+                result = rob_slot.into();
+                queue.enqueue_for_execution(rob_slot, top);
+            }
+
+            if !result.is_undefined() {
+                stack.pop();
+                if !stack.is_empty() {
+                    let parent = stack.peek_at(offset);
+                    // high = 1, low = 2, so they will be saved in reverse order.
+                    let slot = unsafe { parent.results.get_unchecked_mut(offset - 1) };
+                    *slot = result;
+                }
+            }
+
+            if queue.can_execute() {
+                let (task, node_cache_slot, dest) = queue.execute_task_reference();
+                let result_high = task.results[0];
+                let result_low = task.results[1];
+
+                if !result_low.is_rob() && !result_high.is_rob() {
+                    let result_high = result_high.as_node();
+                    let result_low = result_low.as_node();
+
+                    if result_low == result_high {
+                        rob.set_slot_value(*dest, result_low);
+                        *dest = RobSlot::UNDEFINED; // Mark the task as retired.
+                        task_cache.write_at(task.task_cache_slot, task.task, result_low);
+                    } else {
+                        match node_cache.ensure(&PackedBddNode::pack(task.variable, result_low, result_high)) {
+                            Ok(id) => {
+                                // Node is already cached, just update result.
+                                rob.set_slot_value(*dest, id);
+                                *dest = RobSlot::UNDEFINED;
+                                task_cache.write_at(task.task_cache_slot, task.task, id);
+                            }
+                            Err(slot) => {
+                                *node_cache_slot = slot;
+                            }
+                        }
+                    }
+                    queue.move_to_retire();
+                } else {
+                    if result_low.is_rob() {
+                        let slot = result_low.as_rob();
+                        let result = rob.get_slot_value(slot);
+                        if !result.is_undefined() {
+                            rob.free_slot(slot);
+                            task.results[1] = result.into();
+                        }
+                    }
+                    if result_high.is_rob() {
+                        let slot = result_high.as_rob();
+                        let result = rob.get_slot_value(slot);
+                        if !result.is_undefined() {
+                            rob.free_slot(slot);
+                            task.results[0] = result.into();
+                        }
+                    }
+                }
+            }
+
+            if queue.can_retire() {
+                let (task, node_cache_slot, dest) = queue.retire_task_reference();
+                if dest.is_undefined() { // The task was retired during the execute step.
+                    queue.retire()
+                } else {
+                    let result_high = task.results[0].as_node();
+                    let result_low = task.results[1].as_node();
+                    match node_cache.ensure_at(&PackedBddNode::pack(task.variable, result_low, result_high), *node_cache_slot) {
+                        Ok(id) => {
+                            rob.set_slot_value(*dest, id);
+                            task_cache.write_at(task.task_cache_slot, task.task, id);
+                            queue.retire();
+                        }
+                        Err(slot) => {
+                            *node_cache_slot = slot;
+                        }
+                    }
+                }
+            }
+
         }
 
         (node_cache.len(), task_count)
