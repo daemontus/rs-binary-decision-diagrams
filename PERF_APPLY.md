@@ -1,6 +1,6 @@
 ## Apply Algorithm Performance
 
-First, we start with a relatively simple implementation using native `HashMap` with FxHash and unordered BDDs (commit :
+First, we start with a relatively simple implementation using native `HashMap` with FxHash and unordered BDDs (commit `9d84e8e090aa9459f5941bcb9c598bb20deb4b11`):
 
 | Benchmark | Tasks | Nodes | Cycles | Instructions | L3 References | L3 Misses | IPC | L3 hit | I/Task | C/Task |
 | --------- | ----- | ----- | ------ | ------------ | ------------- | --------- | --- | ------ | ------ | ------ |
