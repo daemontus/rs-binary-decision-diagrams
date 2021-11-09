@@ -1164,7 +1164,8 @@ pub mod ooo_apply {
                         }
                     }
                 }
-            } else if !rob.is_full() && !queue.is_full() {
+            } else if !queue.is_full() {
+                // TODO: Prove that ROB cannot be full at this point.
                 let rob_slot = rob.allocate_slot();
                 result = rob_slot.into();
                 queue.enqueue_for_execution(rob_slot, top);
