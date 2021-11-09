@@ -699,6 +699,15 @@ pub mod task_cache {
             }
         }
 
+        pub fn read_at(&self, task: (NodeId, NodeId), slot: usize) -> NodeId {
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                slot_value.1
+            } else {
+                NodeId::UNDEFINED
+            }
+        }
+
         pub fn write(&mut self, task: (NodeId, NodeId), result: NodeId) {
             let slot = self.hashed_index(task);
             let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
