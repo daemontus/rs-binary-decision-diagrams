@@ -965,7 +965,7 @@ pub mod ooo_apply {
             list[last_index] = u64::MAX;
             ReorderBuffer {
                 buffer: list,
-                next_free: RobSlot(0),
+                next_free: RobSlot(0)
             }
         }
 
@@ -1014,9 +1014,6 @@ pub mod ooo_apply {
         retire_head: usize,
         execution_head: usize,
         execution_tail: usize,
-        next_retire_head: usize,
-        next_execution_head: usize,
-        next_execution_tail: usize,
     }
 
     impl<const LEN: usize> ExecutionRetireQueue<LEN> {
@@ -1029,9 +1026,6 @@ pub mod ooo_apply {
                 retire_head: 0,
                 execution_head: 0,
                 execution_tail: 0,
-                next_retire_head: 0,
-                next_execution_head: 0,
-                next_execution_tail: 0,
             }
         }
 
@@ -1050,17 +1044,9 @@ pub mod ooo_apply {
             self.execution_head != self.execution_tail
         }
 
-        pub fn can_execute_2(&self) -> bool {
-            self.can_execute() && (self.execution_head + 1 % LEN) != self.execution_tail
-        }
-
         /// Return true if the queue contains at least one task in the retire queue.
         pub fn can_retire(&self) -> bool {
             self.retire_head != self.execution_head
-        }
-
-        pub fn can_retire_2(&self) -> bool {
-            self.retire_head != self.execution_head && (self.retire_head + 1) % LEN != self.execution_head
         }
 
         /// Add a new task into this queue, that will be marked for execution.
@@ -1070,7 +1056,7 @@ pub mod ooo_apply {
             debug_assert!(!self.is_full());
             let slot = unsafe { self.queue.get_unchecked_mut(self.execution_tail) };
             *slot = (task.clone(), NodeCacheSlot::UNDEFINED, rob);
-            self.next_execution_tail = (self.execution_tail + 1) % LEN
+            self.execution_tail = (self.execution_tail + 1) % LEN
         }
 
         /// Obtain the reference to the task that should be executed next.
@@ -1082,11 +1068,6 @@ pub mod ooo_apply {
             unsafe { self.queue.get_unchecked_mut(self.execution_head) }
         }
 
-        pub fn execute_2_task_reference(&mut self) -> &mut (ApplyTask, NodeCacheSlot, RobSlot) {
-            debug_assert!(self.can_execute_2());
-            unsafe { self.queue.get_unchecked_mut((self.execution_head + 1) % LEN) }
-        }
-
         /// Move the head of the execution queue into the retire queue.
         ///
         /// **Safety:** The method is only valid when the execution queue is not empty. Additionally,
@@ -1094,7 +1075,7 @@ pub mod ooo_apply {
         /// task have been filled.
         pub fn move_to_retire(&mut self) {
             debug_assert!(self.can_execute());
-            self.next_execution_head = (self.execution_head + 1) % LEN;
+            self.execution_head = (self.execution_head + 1) % LEN;
         }
 
         /// Obtain the reference to the task that should be retired next.
@@ -1106,11 +1087,6 @@ pub mod ooo_apply {
             unsafe { self.queue.get_unchecked_mut(self.retire_head) }
         }
 
-        pub fn retire_task_reference_2(&mut self) -> &mut (ApplyTask, NodeCacheSlot, RobSlot) {
-            debug_assert!(self.can_retire_2());
-            unsafe { self.queue.get_unchecked_mut((self.retire_head + 1) % LEN) }
-        }
-
         /// Free up the head of the retirement queue.
         ///
         /// **Safety:** The operation is valid only if the retire queue is not empty. Additionally,
@@ -1118,13 +1094,7 @@ pub mod ooo_apply {
         /// subsequent invariants.
         pub fn retire(&mut self) {
             debug_assert!(self.can_retire());
-            self.next_retire_head = (self.retire_head + 1) % LEN;
-        }
-
-        pub fn commit(&mut self) {
-            self.retire_head = self.next_retire_head;
-            self.execution_head = self.next_execution_head;
-            self.execution_tail = self.next_execution_tail;
+            self.retire_head = (self.retire_head + 1) % LEN;
         }
 
     }
@@ -1140,13 +1110,7 @@ pub mod ooo_apply {
 
         stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
 
-        let mut iters = 0;
-        let mut retire_stall = 0;
-        let mut exec_stall = 0;
-        let mut issue_stall = 0;
-
         while !stack.is_empty() {
-            //iters += 1;
             let top = stack.peek();
 
             let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
@@ -1191,13 +1155,10 @@ pub mod ooo_apply {
                         }
                     }
                 }
-            } else if !queue.is_full() {
-                // TODO: Prove that ROB cannot be exhausted.
+            } else if !rob.is_full() && !queue.is_full() {
                 let rob_slot = rob.allocate_slot();
                 result = rob_slot.into();
                 queue.enqueue_for_execution(rob_slot, top);
-            } else {
-                //issue_stall += 1;
             }
 
             if !result.is_undefined() {
@@ -1210,42 +1171,8 @@ pub mod ooo_apply {
                 }
             }
 
-            if !stack.is_empty() {
-                let top = stack.peek();
-
-                let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
-                let mut result = NodeIdOrRobSlot::UNDEFINED;
-                if top.offset & 1 == 0 {
-
-                    let (left, right) = top.task;
-                    if left.is_one() || right.is_one() {            // Certain one
-                        result = NodeId::ONE.into();
-                    } else if left.is_zero() && right.is_zero() {   // Certain zero
-                        result = NodeId::ZERO.into();
-                    } else {
-                        let (cached, slot) = task_cache.read(top.task);
-                        if !cached.is_undefined() {
-                            result = cached.into();
-                        } else {
-
-                        }
-                    }
-                }
-
-                if !result.is_undefined() {
-                    stack.pop();
-                    if !stack.is_empty() {
-                        let parent = stack.peek_at(offset);
-                        // high = 1, low = 2, so they will be saved in reverse order.
-                        let slot = unsafe { parent.results.get_unchecked_mut(offset - 1) };
-                        *slot = result;
-                    }
-                }
-            }
-
             if queue.can_execute() {
                 let (task, node_cache_slot, dest) = queue.execute_task_reference();
-
                 let result_high = task.results[0];
                 let result_low = task.results[1];
 
@@ -1289,33 +1216,7 @@ pub mod ooo_apply {
                         }
                     }
                 }
-            } else {
-                //exec_stall += 1;
             }
-
-            /*if queue.can_execute_2() {
-                let (task, node_cache_slot, dest) = queue.execute_2_task_reference();
-                let result_high = task.results[0];
-                let result_low = task.results[1];
-
-                if result_low.is_rob() {
-                    let slot = result_low.as_rob();
-                    let result = rob.get_slot_value(slot);
-                    if !result.is_undefined() {
-                        rob.free_slot(slot);
-                        task.results[1] = result.into();
-                    }
-                }
-                if result_high.is_rob() {
-                    exec_stall += 1;
-                    let slot = result_high.as_rob();
-                    let result = rob.get_slot_value(slot);
-                    if !result.is_undefined() {
-                        rob.free_slot(slot);
-                        task.results[0] = result.into();
-                    }
-                }
-            }*/
 
             if queue.can_retire() {
                 let (task, node_cache_slot, dest) = queue.retire_task_reference();
@@ -1335,43 +1236,9 @@ pub mod ooo_apply {
                         }
                     }
                 }
-            } else {
-                //retire_stall += 1;
             }
 
-            /*if queue.can_retire_2() {
-                let (task, node_cache_slot, dest) = queue.retire_task_reference_2();
-                if dest.is_undefined() { // The task was retired during the execute step.
-
-                } else {
-                    let result_high = task.results[0].as_node();
-                    let result_low = task.results[1].as_node();
-                    match node_cache.ensure_at(&PackedBddNode::pack(task.variable, result_low, result_high), *node_cache_slot) {
-                        Ok(id) => {
-                            rob.set_slot_value(*dest, id);
-                            task_cache.write_at(task.task_cache_slot, task.task, id);
-                            *dest = RobSlot::UNDEFINED;
-                        }
-                        Err(slot) => {
-                            *node_cache_slot = slot;
-                        }
-                    }
-                }
-            }*/
-
-            queue.commit();
-
         }
-
-        println!("Iters: {}, exec {}({:.2}%), retire {}({:.2}%), issue {}({:.2}%)",
-                 iters,
-                 exec_stall,
-                 100.0 * (exec_stall as f64) / (iters as f64),
-                 retire_stall,
-                 100.0 * (retire_stall as f64) / (iters as f64),
-                 issue_stall,
-                 100.0 * (issue_stall as f64) / (iters as f64),
-        );
 
         (node_cache.len(), task_count)
     }
