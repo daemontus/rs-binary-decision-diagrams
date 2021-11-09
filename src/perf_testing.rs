@@ -670,7 +670,6 @@ pub mod apply {
     use super::node_id::NodeId;
     use super::packed_bdd_node::PackedBddNode;
     use std::ops::Rem;
-    use std::num::NonZeroU64;
     use super::bdd_dfs::UnsafeStack;
     use super::variable_id::VariableId;
     use super::node_cache::NodeCache;
@@ -707,6 +706,8 @@ pub mod apply {
         const HASH_BLOCK: u64 = 1 << 13;
 
         pub fn new(capacity: usize) -> TaskCache {
+            // The extra capacity ensures that we never have to modulo our hashes, since
+            // hash block can be performed via bit-and, and the overall hash will be always ok.
             TaskCache {
                 items: vec![((NodeId::ZERO, NodeId::ZERO), NodeId::ZERO); capacity + (Self::HASH_BLOCK as usize)]
             }
