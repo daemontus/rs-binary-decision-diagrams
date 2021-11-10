@@ -116,6 +116,18 @@ pub mod packed_bdd_node {
             NodeId::from(self.2)
         }
 
+        pub fn eq_variable(&self, variable: VariableId) -> bool {
+            self.0 == variable.into()
+        }
+
+        pub fn eq_low(&self, low: NodeId) -> bool {
+            self.1 == low.into()
+        }
+
+        pub fn eq_high(&self, high: NodeId) -> bool {
+            self.2 == high.into()
+        }
+
     }
 
 }
@@ -365,6 +377,66 @@ pub mod bdd_dfs {
         items: Vec<T>
     }
 
+    pub struct PointerUnsafeStack<T: Sized + Copy> {
+        pointer_last: *mut T,
+        pointer_zero: *mut T,
+        _items: Vec<T>,
+    }
+
+    impl <T: Sized + Copy> PointerUnsafeStack<T> {
+
+        pub fn new(capacity: usize) -> PointerUnsafeStack<T> {
+            // This design sacrifices the first element as a "stopper", but requires less
+            // pointer arithmetic co implement correctly.
+            let mut data = Vec::with_capacity(capacity + 1);
+            unsafe {
+                data.set_len(capacity + 1);
+                let base_pointer: *mut T = data.get_unchecked_mut(0);
+                PointerUnsafeStack {
+                    pointer_last: base_pointer,
+                    pointer_zero: base_pointer,
+                    _items: data
+                }
+            }
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.pointer_zero == self.pointer_last
+        }
+
+        pub fn len(&self) -> usize {
+            unsafe {
+                self.pointer_last.offset_from(self.pointer_zero).abs() as usize
+            }
+        }
+
+        pub fn peek(&mut self) -> &mut T {
+            unsafe {
+                &mut *self.pointer_last
+            }
+        }
+
+        pub fn peek_at(&mut self, offset: usize) -> &mut T {
+            unsafe {
+                &mut *self.pointer_last.sub(offset)
+            }
+        }
+
+        pub fn push(&mut self, item: T) {
+            unsafe {
+                self.pointer_last = self.pointer_last.add(1);
+                *self.pointer_last = item;
+            }
+        }
+
+        pub fn pop(&mut self) {
+            unsafe {
+                self.pointer_last = self.pointer_last.sub(1);
+            }
+        }
+
+    }
+
     impl <T: Sized + Copy> UnsafeStack<T> {
 
         pub fn new(capacity: usize) -> UnsafeStack<T> {
@@ -538,6 +610,7 @@ pub mod node_cache {
     use super::node_id::NodeId;
     use std::ops::{BitXor, Rem};
     use std::cmp::max;
+    use super::ooo_apply::ApplyTask;
 
     pub struct NodeCache {
         capacity: NonZeroU64,
@@ -651,6 +724,27 @@ pub mod node_cache {
 
                 let slot_value = unsafe { self.nodes.get_unchecked_mut(fresh_slot.into_usize()) };
                 *slot_value = (node.clone(), NodeCacheSlot::UNDEFINED);
+
+                Ok(fresh_slot.into())
+            }
+        }
+
+        pub fn ensure_at_2(&mut self, node: &ApplyTask, slot: NodeCacheSlot) -> Result<NodeId, NodeCacheSlot> {
+            let slot_value = unsafe { self.nodes.get_unchecked_mut(slot.into_usize()) };
+            if slot_value.0.eq_variable(node.variable) && slot_value.0.eq_low(node.results[1].as_node()) && slot_value.0.eq_high(node.results[0].as_node()) {
+                // This is a duplicate insertion, the node is already here.
+                Ok(slot.into())
+            } else if !slot_value.1.is_undefined() {
+                // The node is not here, but there is another link in the chain that we can try.
+                Err(slot_value.1)
+            } else {
+                // The chain ends here and we still haven't found the node. Create it.
+                let fresh_slot = NodeCacheSlot::from(self.index_after_last);
+                slot_value.1 = fresh_slot;
+                self.index_after_last += 1;
+
+                let slot_value = unsafe { self.nodes.get_unchecked_mut(fresh_slot.into_usize()) };
+                *slot_value = (PackedBddNode::pack(node.variable, node.results[1].as_node(), node.results[0].as_node()), NodeCacheSlot::UNDEFINED);
 
                 Ok(fresh_slot.into())
             }
@@ -859,7 +953,7 @@ pub mod apply {
 }
 
 pub mod ooo_apply {
-    use crate::perf_testing::packed_bdd_node::PackedBddNode;
+    use super::packed_bdd_node::PackedBddNode;
     use super::node_cache::{NodeCache, NodeCacheSlot};
     use super::bdd::Bdd;
     use super::node_id::NodeId;
@@ -910,9 +1004,9 @@ pub mod ooo_apply {
     #[derive(Copy, Clone, Eq, PartialEq)]
     pub struct ApplyTask {
         offset: u8,
-        variable: VariableId,
+        pub variable: VariableId,
         task: (NodeId, NodeId),
-        results: [NodeIdOrRobSlot; 2],
+        pub results: [NodeIdOrRobSlot; 2],
         task_cache_slot: usize,
     }
 
@@ -1326,9 +1420,7 @@ pub mod ooo_apply {
                 if dest.is_undefined() { // The task was retired during the execute step.
                     queue.retire()
                 } else {
-                    let result_high = task.results[0].as_node();
-                    let result_low = task.results[1].as_node();
-                    match node_cache.ensure_at(&PackedBddNode::pack(task.variable, result_low, result_high), *node_cache_slot) {
+                    match node_cache.ensure_at_2(task, *node_cache_slot) {
                         Ok(id) => {
                             rob.set_slot_value(*dest, id);
                             task_cache.write_at(task.task_cache_slot, task.task, id.into());
