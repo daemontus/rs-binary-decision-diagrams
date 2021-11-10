@@ -1296,15 +1296,26 @@ pub mod ooo_apply {
         let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
 
+        let mut iter: usize = 0;
+        let mut decode: usize = 0;
+        let mut issue: usize = 0;
+        let mut resolve: usize = 0;
+        let mut execute: usize = 0;
+        let mut retire: usize = 0;
+        let mut resolvable: usize = 0;
+
+        let log = false;
+
         stack.push(ApplyTask::new(0, (left_bdd.get_root_id(), right_bdd.get_root_id())));
 
         while !stack.is_empty() {
-            //println!("iter");
+            if log { iter += 1; }
             let top = stack.peek();
 
             let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
             let mut result = NodeIdOrRobSlot::UNDEFINED;
             if top.offset & 1 == 0 {
+                if log { decode += 1; }
                 top.offset |= 1;   // mark task as expanded
 
                 let (left, right) = top.task;
@@ -1348,6 +1359,7 @@ pub mod ooo_apply {
                     }
                 }
             } else if !queue.is_full() {
+                if log { issue += 1; }
                 // TODO: Prove that ROB cannot be full at this point.
                 let rob_slot = rob.allocate_and_ref_slot();
                 result = rob_slot.into();
@@ -1371,6 +1383,7 @@ pub mod ooo_apply {
                 let mut result_low = task.results[1];
 
                 if result_low.is_rob() {
+                    if log { resolve += 1; }
                     let slot = result_low.as_rob();
                     let result = rob.get_slot_value(slot);
                     if !result.is_undefined() {
@@ -1379,6 +1392,7 @@ pub mod ooo_apply {
                         task.results[1] = result.into();
                     }
                 } else if result_high.is_rob() {
+                    if log { resolve += 1; }
                     // For some reason, this statistically happens much less often,
                     // so we don't check it explicitly, but only if we really have to.
                     let slot = result_high.as_rob();
@@ -1391,6 +1405,7 @@ pub mod ooo_apply {
                 }
 
                 if !result_low.is_rob() && !result_high.is_rob() {
+                    if log { execute += 1; }
                     let result_high = result_high.as_node();
                     let result_low = result_low.as_node();
 
@@ -1416,6 +1431,7 @@ pub mod ooo_apply {
             }
 
             if queue.can_retire() {
+                if log { retire += 1; }
                 let (task, node_cache_slot, dest) = queue.retire_task_reference();
                 if dest.is_undefined() { // The task was retired during the execute step.
                     queue.retire()
@@ -1436,6 +1452,17 @@ pub mod ooo_apply {
             queue.commit();
 
         }
+
+        println!("{} {} {} {} {} {}",
+            iter,
+            decode,
+            issue,
+            resolve,
+            execute,
+            retire,
+        );
+
+        println!("Resolvable: {} ({:.2}%)", resolvable, 100.0 * (resolvable as f64) / {decode as f64});
 
         (node_cache.len(), task_count)
     }
