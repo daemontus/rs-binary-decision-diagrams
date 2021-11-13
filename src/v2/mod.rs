@@ -242,13 +242,7 @@ impl Bdd {
 
     #[inline]
     pub(crate) fn prefetch(&self, id: NodeId) {
-        unsafe {
-            // Prefetch operations ignore memory errors and are therefore "externally safe".
-            if cfg!(target_arch = "x86_64") {
-                let reference: *const BddNode = self.nodes.get_unchecked(id.0 as usize);
-                std::arch::x86_64::_mm_prefetch::<3>(reference as *const i8);
-            }
-        }
+
     }
 
     pub(crate) fn get_variable(&self, id: NodeId) -> VariableId {

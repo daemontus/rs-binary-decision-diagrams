@@ -163,13 +163,6 @@ pub mod bdd {
             unsafe { self.nodes.get_unchecked(id.into_usize()) }
         }
 
-        pub fn prefetch(&self, id: NodeId) {
-            unsafe {
-                let pointer: *const PackedBddNode = self.nodes.get_unchecked(id.into_usize());
-                std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
-            }
-        }
-
         pub fn node_count(&self) -> usize {
             self.nodes.len()
         }
@@ -544,12 +537,6 @@ pub mod coupled_dfs {
             let block_index = right_hash.rem(Self::HASH_BLOCK);
             let block_start: u64 = u64::from(task.0);
 
-            unsafe {
-                // Usually not that important, but seems to be actually helping for large BDDs.
-                let pointer: *const (NodeId, NodeId) =
-                    self.items.get_unchecked((block_start as usize) + 128);
-                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
-            }
             (block_start + block_index).rem(self.capacity) as usize
         }
 
@@ -820,12 +807,6 @@ pub mod task_cache {
             let block_index = right_hash.rem(Self::HASH_BLOCK);
             let block_start: u64 = u64::from(task.0);
 
-            unsafe {
-                // Usually not that important, but seems to be actually helping for large BDDs.
-                let pointer: *const ((NodeId, NodeId), NodeId) =
-                    self.items.get_unchecked((block_start as usize) + 128);
-                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
-            }
             (block_start + block_index) as usize
         }
 
@@ -1076,12 +1057,6 @@ pub mod ooo_apply {
             let block_index = right_hash.rem(Self::HASH_BLOCK);
             let block_start: u64 = u64::from(task.0);
 
-            unsafe {
-                // Usually not that important, but seems to be actually helping for large BDDs.
-                let pointer: *const ((NodeId, NodeId), NodeIdOrRobSlot) =
-                    self.items.get_unchecked((block_start as usize) + 128);
-                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
-            }
             (block_start + block_index) as usize
         }
 

@@ -76,10 +76,7 @@ impl NodeCache {
         let high_hash = node.high_link().0.wrapping_mul(Self::SEED);
         let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
         let base = max(node.low_link().0, node.high_link().0);
-        unsafe {
-            let pointer: *const usize = self.hashes.get_unchecked((base as usize) + 128);
-            std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
-        }
+
         (base + block_index).rem(self.capacity) as usize
         //low_hash.bitxor(high_hash).rem(self.capacity) as usize
     }
@@ -164,13 +161,7 @@ impl TaskCache {
         //    let mask = (1u64 << bits) - 1;
         //    u64::from(left).wrapping_shl(bits) | (u64::from(right) & mask)
         //};
-        unsafe {
-            // This actually helps quite a bit in coupled DFS (up to 30%), but thanks to
-            // the pointer chasing in node cache, it only adds 5-10% in the main algorithm.
-            let pointer: *const ((NodeId, NodeId), NodeId) =
-                self.keys.get_unchecked((block_start as usize) + 128);
-            std::arch::x86_64::_mm_prefetch::<3>(pointer as *const i8);
-        }
+
         (block_start + block_index).rem(self.capacity) as usize
     }
 }

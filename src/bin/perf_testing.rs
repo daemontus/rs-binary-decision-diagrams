@@ -1,10 +1,11 @@
 use binary_decision_diagrams::perf_testing::bdd::Bdd;
 use std::convert::TryFrom;
-use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
-use criterion::measurement::Measurement;
-use criterion_perf_events::Perf;
+use std::time::SystemTime;
+//use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
+//use criterion::measurement::Measurement;
+//use criterion_perf_events::Perf;
 use binary_decision_diagrams::perf_testing::ooo_apply::ooo_apply;
-
+/*
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
 }
@@ -27,7 +28,7 @@ fn new_branch_miss_counter() -> Perf {
 
 fn new_branches_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::BranchInstructions))
-}
+}*/
 
 fn main() {
     let mut benchmarks = Vec::new();
@@ -71,7 +72,7 @@ fn main() {
 
         println!("warmup run...");
         benchmark_code(&left, &right);
-
+/*
         let cycles = new_cpu_cycles_counter();
         let instructions = new_instructions_counter();
         let cache_references = new_cache_reference_counter();
@@ -85,10 +86,16 @@ fn main() {
         let i_cache_misses = cache_misses.start();
         let i_branches = branches.start();
         let i_branch_misses = branch_misses.start();
+*/
+        for _ in 1..5 {
+            let start = SystemTime::now();
+            let (product_nodes, product_tasks) = benchmark_code(&left, &right);
+            println!("Elapsed for {} {}: {}", product_nodes, product_tasks,
+                     start.elapsed().unwrap().as_millis()
+            );
+        }
 
-        let (product_nodes, product_tasks) = benchmark_code(&left, &right);
-
-        let cycles = cycles.end(i_cycles);
+ /*       let cycles = cycles.end(i_cycles);
         let instructions = instructions.end(i_instructions);
         let cache_references = cache_references.end(i_cache_references);
         let cache_misses = cache_misses.end(i_cache_misses);
@@ -113,7 +120,7 @@ fn main() {
                  branch_hit_rate,
                  instructions_per_node,
                  cycles_per_node,
-        )
+        )*/
 
     }
 }

@@ -55,15 +55,7 @@ impl TaskCache {
 
     #[inline]
     pub fn prefetch(&self, tasks: PointerPair) {
-        if cfg!(target_arch = "x86_64") {
-            let index = self.hashed_index(tasks);
-            unsafe {
-                let key: *const PointerPair = self.keys.get_unchecked(index);
-                let value: *const NodeId = self.values.get_unchecked(index);
-                std::arch::x86_64::_mm_prefetch::<3>(key as *const i8);
-                std::arch::x86_64::_mm_prefetch::<3>(value as *const i8);
-            }
-        }
+
     }
 
     #[inline]
