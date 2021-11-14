@@ -1302,7 +1302,7 @@ pub mod ooo_apply {
         let mut resolve: usize = 0;
         let mut execute: usize = 0;
         let mut retire: usize = 0;
-        let mut resolvable: usize = 0;
+        let resolvable: usize = 0;
 
         let log = false;
 
@@ -1463,6 +1463,443 @@ pub mod ooo_apply {
         );
 
         println!("Resolvable: {} ({:.2}%)", resolvable, 100.0 * (resolvable as f64) / {decode as f64});
+
+        (node_cache.len(), task_count)
+    }
+
+}
+
+pub mod ooo_apply_2 {
+    use std::ops::Rem;
+    use crate::perf_testing::node_cache::NodeCacheSlot;
+    use super::bdd::Bdd;
+    use super::node_id::NodeId;
+    use super::variable_id::VariableId;
+    use super::packed_bdd_node::PackedBddNode;
+    use super::node_cache::NodeCache;
+
+    const TASK_MASK: u64 = 1 << 62;
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    pub struct MagicNumber(u64);
+
+    impl MagicNumber {
+        pub const UNDEFINED: MagicNumber = MagicNumber(u64::MAX);
+
+        pub fn is_task_slot(&self) -> bool {
+            self.0 & TASK_MASK != 0
+        }
+
+        pub fn as_task_slot(&self) -> TaskSlot {
+            TaskSlot::from(self.0 as u32) // will erase the mask.
+        }
+
+        pub fn as_node_id(&self) -> NodeId {
+            NodeId::from(self.0)
+        }
+
+        pub fn as_node_cache_slot(&self) -> NodeCacheSlot {
+            NodeCacheSlot::from(self.0)
+        }
+    }
+
+    impl From<NodeId> for MagicNumber {
+        fn from(value: NodeId) -> Self {
+            MagicNumber(value.into())
+        }
+    }
+
+    impl From<TaskSlot> for MagicNumber {
+        fn from(value: TaskSlot) -> Self {
+            MagicNumber(u32::from(value) as u64 | TASK_MASK)
+        }
+    }
+
+    impl From<NodeCacheSlot> for MagicNumber {
+        fn from(value: NodeCacheSlot) -> Self {
+            MagicNumber(u64::from(value))
+        }
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    pub struct TaskSlot(u32);
+
+    impl TaskSlot {
+        pub const UNDEFINED: TaskSlot = TaskSlot(u32::MAX);
+
+        pub fn into_usize(self) -> usize {
+            self.0 as usize
+        }
+    }
+
+    impl From<u32> for TaskSlot {
+        fn from(value: u32) -> Self {
+            TaskSlot(value)
+        }
+    }
+
+    impl From<TaskSlot> for u32 {
+        fn from(value: TaskSlot) -> Self {
+            value.0
+        }
+    }
+
+    pub struct TaskCache {
+        items: Vec<((NodeId, NodeId), MagicNumber)>
+    }
+
+    impl TaskCache {
+        pub const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        const HASH_BLOCK: u64 = 1 << 13;
+
+        pub fn new(capacity: usize) -> TaskCache {
+            // The extra capacity ensures that we never have to modulo our hashes, since
+            // hash block can be performed via bit-and, and the overall hash will be always ok.
+            TaskCache {
+                items: vec![((NodeId::ZERO, NodeId::ZERO), MagicNumber::from(NodeId::ZERO)); capacity + (Self::HASH_BLOCK as usize)]
+            }
+        }
+
+        pub fn read(&self, task: (NodeId, NodeId)) -> (MagicNumber, usize) {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                (slot_value.1, slot)
+            } else {
+                (MagicNumber::UNDEFINED, slot)
+            }
+        }
+
+        pub fn read_at(&self, task: (NodeId, NodeId), slot: usize) -> MagicNumber {
+            let slot_value = unsafe { self.items.get_unchecked(slot ) };
+            if slot_value.0 == task {
+                slot_value.1
+            } else {
+                MagicNumber::UNDEFINED
+            }
+        }
+
+        pub fn write(&mut self, task: (NodeId, NodeId), result: MagicNumber) {
+            let slot = self.hashed_index(task);
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        pub fn write_at(&mut self, slot: usize, task: (NodeId, NodeId), result: MagicNumber) {
+            let slot_value = unsafe { self.items.get_unchecked_mut(slot ) };
+            *slot_value = (task, result);
+        }
+
+        // Locality sensitive hashing algorithm, assuming that left nodes are a
+        // mostly-growing sequence.
+        fn hashed_index(&self, task: (NodeId, NodeId)) -> usize {
+            let right_hash = u64::from(task.1).wrapping_mul(Self::SEED);
+            let block_index = right_hash.rem(Self::HASH_BLOCK);
+            let block_start: u64 = u64::from(task.0);
+
+            unsafe {
+                // Usually not that important, but seems to be actually helping for large BDDs.
+                let pointer: *const ((NodeId, NodeId), MagicNumber) =
+                    self.items.get_unchecked((block_start as usize) + 128);
+                std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
+            }
+            (block_start + block_index) as usize
+        }
+
+    }
+
+    struct PendingTask {
+        // Keeps track of other tasks depending on us. It is unnecessarily large,
+        // but it keeps this whole struct aligned on cache-line boundaries.
+        reference_count: u64,
+        // Next task in the decode/issue stack, or in the execution queue, or in the
+        // linked list of free slots.
+        next_task: TaskSlot,
+        // Decision variable of this task, computed during decode.
+        variable: VariableId,
+        // Nodes which uniquely identify this task.
+        task: (NodeId, NodeId),
+        // Results or pending tasks which will compute the results.
+        // Either a node ID, or a task slot.
+        dependencies: (MagicNumber, MagicNumber),
+        // Place to save the result in the task cache.
+        task_cache_slot: usize,
+        // Either a node cache slot where we should retry insertion, or a final
+        // result of this task (which can also be a task slot in some cases!)
+        result: MagicNumber,
+    }
+
+    struct OOOStack {
+        next_free: TaskSlot,
+        next_decode: TaskSlot,
+        next_execute: TaskSlot,
+        last_execute: TaskSlot,
+        items: Vec<PendingTask>
+    }
+
+    impl OOOStack {
+
+        pub fn new(capacity: usize) -> OOOStack {
+            let mut slots: Vec<PendingTask> = Vec::with_capacity(capacity);
+            unsafe { slots.set_len(capacity); }
+            for i in 0..capacity {
+                slots[i].next_task = ((i+1) as u32).into();
+            }
+            slots[capacity - 1].next_task = TaskSlot::UNDEFINED;
+            OOOStack {
+                items: slots,
+                next_free: 0.into(),
+                next_decode: TaskSlot::UNDEFINED,
+                next_execute: TaskSlot::UNDEFINED,
+                last_execute: TaskSlot::UNDEFINED,
+            }
+        }
+
+        pub fn is_full(&self) -> bool {
+            self.next_free == TaskSlot::UNDEFINED
+        }
+
+        pub fn can_decode(&self) -> bool {
+            self.next_decode != TaskSlot::UNDEFINED
+        }
+
+        pub fn can_execute(&self) -> bool {
+            self.next_execute != TaskSlot::UNDEFINED
+        }
+
+        pub fn get_slot_mut(&mut self, slot: TaskSlot) -> *mut PendingTask {
+            unsafe {
+                self.items.get_unchecked_mut(slot.into_usize())
+            }
+        }
+
+        /// Increase the reference count of a particular slot.
+        pub fn ref_slot(&mut self, slot: TaskSlot) {
+            let slot_value = self.get_slot_mut(slot);
+            unsafe { (*slot_value).reference_count += 1; }
+        }
+
+        /// Decrease the reference count of a particular slot and free it if it reaches zero.
+        pub fn deref_slot(&mut self, slot: TaskSlot) {
+            unsafe {
+                let slot_value = self.get_slot_mut(slot);
+                (*slot_value).reference_count -= 1;
+                if (*slot_value).reference_count == 0 {
+                    //println!("Free: {:?}", slot);
+                    (*slot_value).next_task = self.next_free;
+                    self.next_free = slot;
+                }
+            }
+        }
+
+        pub fn next_decode_task(&self) -> TaskSlot {
+            self.next_decode
+        }
+
+        pub fn next_execute_task(&self) -> TaskSlot {
+            self.next_execute
+        }
+
+        pub fn push_to_decode(&mut self, task: (NodeId, NodeId)) -> TaskSlot {
+            // First, allocate a new slot.
+            unsafe {
+                let slot = self.next_free;
+                let slot_value = self.get_slot_mut(slot);
+                self.next_free = (*slot_value).next_task;
+                // Set ref. count, "parent" and task data.
+                (*slot_value).reference_count = 1;
+                (*slot_value).task = task;
+                (*slot_value).variable = VariableId::UNDEFINED;
+                (*slot_value).next_task = self.next_decode;
+                self.next_decode = slot;
+                slot
+            }
+        }
+
+        pub fn pop_from_decode(&mut self) {
+            unsafe {
+                let current = self.get_slot_mut(self.next_decode);
+                self.next_decode = (*current).next_task;
+            }
+        }
+
+        pub fn enqueue_execution(&mut self, slot: TaskSlot, task: *mut PendingTask) {
+            unsafe {
+                if self.last_execute == TaskSlot::UNDEFINED {
+                    self.next_execute = slot;
+                } else {
+                    let last_execute = self.get_slot_mut(self.last_execute);
+                    (*last_execute).next_task = slot;
+                }
+                (*task).next_task = TaskSlot::UNDEFINED;
+                self.last_execute = slot;
+            }
+        }
+
+        pub fn deque_execution(&mut self, task: *mut PendingTask) {
+            unsafe {
+                self.next_execute = (*task).next_task;
+                if self.next_execute == TaskSlot::UNDEFINED {
+                    self.last_execute = TaskSlot::UNDEFINED;
+                }
+            }
+        }
+
+    }
+
+    pub fn ooo_apply_2(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
+        let height_limit = left_bdd.get_height() + right_bdd.get_height();
+        let mut stack = OOOStack::new(height_limit);
+        let mut task_cache = TaskCache::new(left_bdd.node_count());
+        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
+        let mut task_count = 0;
+
+        stack.push_to_decode((left_bdd.get_root_id(), right_bdd.get_root_id()));
+
+        unsafe {
+            while stack.can_decode() {
+                if !stack.is_full() {
+                    let top_slot = stack.next_decode_task();
+                    let top_task = stack.get_slot_mut(top_slot);
+                    if (*top_task).variable == VariableId::UNDEFINED {
+                        // Task has not been decoded yet.
+                        let (left, right) = (*top_task).task;
+                        //println!("Decode {:?} {:?}", (*top_task).task, top_slot);
+                        let mut result = MagicNumber::UNDEFINED;
+                        if left.is_one() || right.is_one() {
+                            result = NodeId::ONE.into();
+                        } else if left.is_zero() && right.is_zero() {
+                            result = NodeId::ZERO.into();
+                        } else {
+                            let (cached, slot) = task_cache.read((left, right));
+                            if cached != MagicNumber::UNDEFINED {
+                                if cached.is_task_slot() {
+                                    stack.ref_slot(cached.as_task_slot());
+                                }
+                                result = cached.into();
+                            } else {
+                                (*top_task).task_cache_slot = slot;
+                                task_cache.write_at(slot, (left, right), top_slot.into());
+                                // Actually expand.
+                                task_count += 1;
+
+                                let left_node = left_bdd.get_node_unchecked(left);
+                                let right_node = right_bdd.get_node_unchecked(right);
+
+                                let (l_var, l_low, l_high) = left_node.unpack();
+                                let (r_var, r_low, r_high) = right_node.unpack();
+
+                                if l_var == r_var {
+                                    (*top_task).variable = l_var;
+                                    (*top_task).dependencies.1 = stack.push_to_decode((l_high, r_high)).into();
+                                    (*top_task).dependencies.0 = stack.push_to_decode((l_low, r_low)).into();
+                                } else if l_var < r_var {
+                                    (*top_task).variable = l_var;
+                                    (*top_task).dependencies.1 = stack.push_to_decode((l_high, right)).into();
+                                    (*top_task).dependencies.0 = stack.push_to_decode((l_low, right)).into();
+                                } else {
+                                    (*top_task).variable = r_var;
+                                    (*top_task).dependencies.1 = stack.push_to_decode((left, r_high)).into();
+                                    (*top_task).dependencies.0 = stack.push_to_decode((left, r_low)).into();
+                                }
+                            }
+                        }
+
+                        // This will also erase any uninitialized memory that might have been
+                        // left there.
+                        (*top_task).result = result;
+                        if result != MagicNumber::UNDEFINED {
+                            stack.pop_from_decode();
+                        }
+                    } else {
+                        // Task is decoded, it can be issued into the execution queue.
+                        stack.pop_from_decode();
+                        stack.enqueue_execution(top_slot, top_task);
+                    }
+                } else {
+                    panic!("Stack overflow.");
+                }
+
+                if stack.can_execute() {
+                    let top_slot = stack.next_execute_task();
+                    let top_task = stack.get_slot_mut(top_slot);
+
+                    // If the result is undefined, it means we haven't even started computing
+                    // the result node.
+                    if (*top_task).result == MagicNumber::UNDEFINED {
+                        // At this point, dependencies are guaranteed to be computed.
+                        let (slot_low, slot_high) = (*top_task).dependencies;
+                        let (slot_low, slot_high) = (slot_low.as_task_slot(), slot_high.as_task_slot());
+                        stack.deref_slot(slot_low);
+                        stack.deref_slot(slot_high);
+                        let slot_low = (*stack.get_slot_mut(slot_low)).result;
+                        let slot_high = (*stack.get_slot_mut(slot_high)).result;
+
+                        // However, some dependencies can be "slightly" transitive:
+                        let result_low = if slot_low.is_task_slot() {
+                            let task = slot_low.as_task_slot();
+                            stack.deref_slot(task);
+                            (*stack.get_slot_mut(task)).result.as_node_id()
+                        } else {
+                            slot_low.as_node_id()
+                        };
+                        let result_high = if slot_high.is_task_slot() {
+                            let task = slot_high.as_task_slot();
+                            stack.deref_slot(task);
+                            (*stack.get_slot_mut(task)).result.as_node_id()
+                        } else {
+                            slot_high.as_node_id()
+                        };
+                        (*top_task).dependencies = (result_low.into(), result_high.into());
+
+                        let created = node_cache.ensure(
+                            &PackedBddNode::pack((*top_task).variable, result_low, result_high)
+                        );
+
+                        match created {
+                            Ok(id) => {
+                                (*top_task).result = id.into();
+                                stack.deque_execution(top_task);
+                                task_cache.write_at(
+                                    (*top_task).task_cache_slot,
+                                    (*top_task).task,
+                                    id.into()
+                                );
+                            }
+                            Err(next) => {
+                                (*top_task).result = next.into();
+                            }
+                        }
+                    } else {
+                        // The result now contains the cache slot where we should be inserting,
+                        // but the task is not done yet.
+                        let created = node_cache.ensure_at(
+                            &PackedBddNode::pack(
+                                (*top_task).variable,
+                                (*top_task).dependencies.0.as_node_id(),
+                                (*top_task).dependencies.1.as_node_id(),
+                            ),
+                            (*top_task).result.as_node_cache_slot()
+                        );
+
+                        match created {
+                            Ok(id) => {
+                                (*top_task).result = id.into();
+                                stack.deque_execution(top_task);
+                                task_cache.write_at(
+                                    (*top_task).task_cache_slot,
+                                    (*top_task).task,
+                                    id.into()
+                                );
+                            }
+                            Err(next) => {
+                                (*top_task).result = next.into();
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         (node_cache.len(), task_count)
     }
