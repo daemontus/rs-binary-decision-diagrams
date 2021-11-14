@@ -1856,26 +1856,36 @@ pub mod ooo_apply_2 {
                         };
                         (*top_task).dependencies = (result_low.into(), result_high.into());
 
-                        let created = node_cache.ensure(
-                            &PackedBddNode::pack(
-                                (*top_task).variable,
-                                result_low,
-                                result_high
-                            )
-                        );
+                        if result_low == result_high {
+                            (*top_task).result = result_low.into();
+                            stack.deque_execution(top_task);
+                            task_cache.write_at(
+                                (*top_task).task_cache_slot,
+                                (*top_task).task,
+                                result_low.into()
+                            );
+                        } else {
+                            let created = node_cache.ensure(
+                                &PackedBddNode::pack(
+                                    (*top_task).variable,
+                                    result_low,
+                                    result_high
+                                )
+                            );
 
-                        match created {
-                            Ok(id) => {
-                                (*top_task).result = id.into();
-                                stack.deque_execution(top_task);
-                                task_cache.write_at(
-                                    (*top_task).task_cache_slot,
-                                    (*top_task).task,
-                                    id.into()
-                                );
-                            }
-                            Err(next) => {
-                                (*top_task).result = next.into();
+                            match created {
+                                Ok(id) => {
+                                    (*top_task).result = id.into();
+                                    stack.deque_execution(top_task);
+                                    task_cache.write_at(
+                                        (*top_task).task_cache_slot,
+                                        (*top_task).task,
+                                        id.into()
+                                    );
+                                }
+                                Err(next) => {
+                                    (*top_task).result = next.into();
+                                }
                             }
                         }
                     } else {
