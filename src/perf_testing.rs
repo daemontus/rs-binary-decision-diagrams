@@ -1779,7 +1779,6 @@ pub mod ooo_apply_2 {
                                 result = cached.into();
                             } else {
                                 (*top_task).task_cache_slot = slot;
-                                task_cache.write_at(slot, (left, right), top_slot.into());
                                 // Actually expand.
                                 task_count += 1;
 
@@ -1815,6 +1814,11 @@ pub mod ooo_apply_2 {
                         // Task is decoded, it can be issued into the execution queue.
                         stack.pop_from_decode();
                         stack.enqueue_execution(top_slot, top_task);
+                        task_cache.write_at(
+                            (*top_task).task_cache_slot,
+                            (*top_task).task,
+                            top_slot.into()
+                        );
                     }
                 } else {
                     panic!("Stack overflow.");
@@ -1853,7 +1857,11 @@ pub mod ooo_apply_2 {
                         (*top_task).dependencies = (result_low.into(), result_high.into());
 
                         let created = node_cache.ensure(
-                            &PackedBddNode::pack((*top_task).variable, result_low, result_high)
+                            &PackedBddNode::pack(
+                                (*top_task).variable,
+                                result_low,
+                                result_high
+                            )
                         );
 
                         match created {
