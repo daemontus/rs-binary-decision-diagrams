@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use binary_decision_diagrams::perf_testing::ooo_apply::ooo_apply;
+use binary_decision_diagrams::perf_testing::ooo_apply_2::ooo_apply_2;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -119,7 +119,7 @@ fn main() {
 }
 
 fn benchmark_code(left: &Bdd, right: &Bdd) -> (usize, usize) {
-    let (created, counted) = ooo_apply(left, right);
+    let (created, counted) = ooo_apply_2(left, right);
     println!("Counted {} nodes, created {} nodes.", counted, created);
     (created, counted)
 }
