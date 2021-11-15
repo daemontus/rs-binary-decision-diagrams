@@ -25,3 +25,9 @@ perfcnt = "0.7.1"
 [[bench]]
 name = "itgr"
 harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+panic = "abort"
+codegen-units = 1
