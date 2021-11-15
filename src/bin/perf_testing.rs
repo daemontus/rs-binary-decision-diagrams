@@ -4,6 +4,7 @@ use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
 use binary_decision_diagrams::perf_testing::ooo_apply_2::ooo_apply_2;
+use std::time::SystemTime;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -86,7 +87,9 @@ fn main() {
         let i_branches = branches.start();
         let i_branch_misses = branch_misses.start();
 
+        let start = SystemTime::now();
         let (product_nodes, product_tasks) = benchmark_code(&left, &right);
+        let elapsed = start.elapsed().unwrap().as_millis();
 
         let cycles = cycles.end(i_cycles);
         let instructions = instructions.end(i_instructions);
@@ -100,8 +103,9 @@ fn main() {
         let branch_misses = branch_misses.end(i_branch_misses);
         let branch_hit_rate = 100.0 - (100.0 * (branch_misses as f64) / (branches as f64));
 
-        println!("| {} | {} | {} | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |",
+        println!("| {} | {} | {} | {} | {} | {} | {} | {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} |",
                  benchmark,
+                 elapsed,
                  product_tasks,
                  product_nodes,
                  cycles,
