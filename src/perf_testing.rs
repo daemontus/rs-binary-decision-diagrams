@@ -1611,10 +1611,7 @@ pub mod ooo_apply_2 {
     struct PendingTask {
         // Keeps track of other tasks depending on us. It is unnecessarily large,
         // but it keeps this whole struct aligned on cache-line boundaries.
-        reference_count: u64,
-        // Next task in the decode/issue stack, or in the execution queue, or in the
-        // linked list of free slots.
-        next_task: TaskSlot,
+        reference_count: u32,
         // Decision variable of this task, computed during decode.
         variable: VariableId,
         // Nodes which uniquely identify this task.
@@ -1630,46 +1627,48 @@ pub mod ooo_apply_2 {
     }
 
     struct OOOStack {
-        next_free: TaskSlot,
-        next_decode: TaskSlot,
-        next_execute: TaskSlot,
-        last_execute: TaskSlot,
-        items: Vec<PendingTask>
+        allocate_next: usize,
+        decode_push_at: usize,
+        execute_at: usize,
+        execute_enqueue_at: usize,
+        slots: Vec<PendingTask>,
+        allocations: Vec<TaskSlot>,
+        execution_queue: Vec<TaskSlot>,
     }
 
     impl OOOStack {
 
         pub fn new(capacity: usize) -> OOOStack {
+            // Initially, all slots contain uninitialized memory.
             let mut slots: Vec<PendingTask> = Vec::with_capacity(capacity);
             unsafe { slots.set_len(capacity); }
-            for i in 0..capacity {
-                slots[i].next_task = ((i+1) as u32).into();
-            }
-            slots[capacity - 1].next_task = TaskSlot::UNDEFINED;
+            // The allocation stack has indices of all task slots.
+            let allocations: Vec<TaskSlot> = (0..capacity).map(|it| (it as u32).into()).collect();
+            let execution_queue: Vec<TaskSlot> = vec![TaskSlot::UNDEFINED; 64];
             OOOStack {
-                items: slots,
-                next_free: 0.into(),
-                next_decode: TaskSlot::UNDEFINED,
-                next_execute: TaskSlot::UNDEFINED,
-                last_execute: TaskSlot::UNDEFINED,
+                slots, allocations, execution_queue,
+                allocate_next: 0,
+                decode_push_at: 0,
+                execute_at: 0,
+                execute_enqueue_at: 0,
             }
         }
 
-        pub fn is_full(&self) -> bool {
-            self.next_free == TaskSlot::UNDEFINED
+        pub fn is_execution_full(&self) -> bool {
+            (self.execute_enqueue_at + 1) % 64 == self.execute_at
         }
 
         pub fn can_decode(&self) -> bool {
-            self.next_decode != TaskSlot::UNDEFINED
+            self.decode_push_at != 0
         }
 
         pub fn can_execute(&self) -> bool {
-            self.next_execute != TaskSlot::UNDEFINED
+            self.execute_at != self.execute_enqueue_at
         }
 
         pub fn get_slot_mut(&mut self, slot: TaskSlot) -> *mut PendingTask {
             unsafe {
-                self.items.get_unchecked_mut(slot.into_usize())
+                self.slots.get_unchecked_mut(slot.into_usize())
             }
         }
 
@@ -1683,66 +1682,57 @@ pub mod ooo_apply_2 {
         pub fn deref_slot(&mut self, slot: TaskSlot) {
             unsafe {
                 let slot_value = self.get_slot_mut(slot);
-                (*slot_value).reference_count -= 1;
-                if (*slot_value).reference_count == 0 {
-                    //println!("Free: {:?}", slot);
-                    (*slot_value).next_task = self.next_free;
-                    self.next_free = slot;
+                let ref_count = &mut (*slot_value).reference_count;
+                if *ref_count == 1 {
+                    self.allocate_next -= 1;
+                    *self.allocations.get_unchecked_mut(self.allocate_next) = slot;
+                } else {
+                    *ref_count -= 1;
                 }
             }
         }
 
         pub fn next_decode_task(&self) -> TaskSlot {
-            self.next_decode
+            unsafe {
+                *self.allocations.get_unchecked(self.decode_push_at - 1)
+            }
         }
 
         pub fn next_execute_task(&self) -> TaskSlot {
-            self.next_execute
+            unsafe {
+                *self.execution_queue.get_unchecked(self.execute_at)
+            }
         }
 
         pub fn push_to_decode(&mut self, task: (NodeId, NodeId)) -> TaskSlot {
             // First, allocate a new slot.
             unsafe {
-                let slot = self.next_free;
+                let slot = *self.allocations.get_unchecked(self.allocate_next);
+                self.allocate_next += 1;
                 let slot_value = self.get_slot_mut(slot);
-                self.next_free = (*slot_value).next_task;
-                // Set ref. count, "parent" and task data.
+                // Set ref. count and task data.
                 (*slot_value).reference_count = 1;
                 (*slot_value).task = task;
                 (*slot_value).variable = VariableId::UNDEFINED;
-                (*slot_value).next_task = self.next_decode;
-                self.next_decode = slot;
+                *self.allocations.get_unchecked_mut(self.decode_push_at) = slot;
+                self.decode_push_at += 1;
                 slot
             }
         }
 
         pub fn pop_from_decode(&mut self) {
+            self.decode_push_at -= 1;
+        }
+
+        pub fn enqueue_execution(&mut self, slot: TaskSlot) {
             unsafe {
-                let current = self.get_slot_mut(self.next_decode);
-                self.next_decode = (*current).next_task;
+                *self.execution_queue.get_unchecked_mut(self.execute_enqueue_at) = slot;
+                self.execute_enqueue_at = (self.execute_enqueue_at + 1) % 64;
             }
         }
 
-        pub fn enqueue_execution(&mut self, slot: TaskSlot, task: *mut PendingTask) {
-            unsafe {
-                if self.last_execute == TaskSlot::UNDEFINED {
-                    self.next_execute = slot;
-                } else {
-                    let last_execute = self.get_slot_mut(self.last_execute);
-                    (*last_execute).next_task = slot;
-                }
-                (*task).next_task = TaskSlot::UNDEFINED;
-                self.last_execute = slot;
-            }
-        }
-
-        pub fn deque_execution(&mut self, task: *mut PendingTask) {
-            unsafe {
-                self.next_execute = (*task).next_task;
-                if self.next_execute == TaskSlot::UNDEFINED {
-                    self.last_execute = TaskSlot::UNDEFINED;
-                }
-            }
+        pub fn deque_execution(&mut self) {
+            self.execute_at = (self.execute_at + 1) % 64;
         }
 
     }
@@ -1758,7 +1748,7 @@ pub mod ooo_apply_2 {
 
         unsafe {
             while stack.can_decode() {
-                if !stack.is_full() {
+                if !stack.is_execution_full() {
                     let top_slot = stack.next_decode_task();
                     let top_task = stack.get_slot_mut(top_slot);
                     if (*top_task).variable == VariableId::UNDEFINED {
@@ -1813,15 +1803,13 @@ pub mod ooo_apply_2 {
                     } else {
                         // Task is decoded, it can be issued into the execution queue.
                         stack.pop_from_decode();
-                        stack.enqueue_execution(top_slot, top_task);
+                        stack.enqueue_execution(top_slot);
                         task_cache.write_at(
                             (*top_task).task_cache_slot,
                             (*top_task).task,
                             top_slot.into()
                         );
                     }
-                } else {
-                    panic!("Stack overflow.");
                 }
 
                 if stack.can_execute() {
@@ -1858,7 +1846,7 @@ pub mod ooo_apply_2 {
 
                         if result_low == result_high {
                             (*top_task).result = result_low.into();
-                            stack.deque_execution(top_task);
+                            stack.deque_execution();
                             task_cache.write_at(
                                 (*top_task).task_cache_slot,
                                 (*top_task).task,
@@ -1876,7 +1864,7 @@ pub mod ooo_apply_2 {
                             match created {
                                 Ok(id) => {
                                     (*top_task).result = id.into();
-                                    stack.deque_execution(top_task);
+                                    stack.deque_execution();
                                     task_cache.write_at(
                                         (*top_task).task_cache_slot,
                                         (*top_task).task,
@@ -1903,7 +1891,7 @@ pub mod ooo_apply_2 {
                         match created {
                             Ok(id) => {
                                 (*top_task).result = id.into();
-                                stack.deque_execution(top_task);
+                                stack.deque_execution();
                                 task_cache.write_at(
                                     (*top_task).task_cache_slot,
                                     (*top_task).task,
