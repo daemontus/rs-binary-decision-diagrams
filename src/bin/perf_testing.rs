@@ -75,7 +75,9 @@ fn main() {
         let right = right.sort_preorder();
 
         println!("warmup run...");
-        benchmark_code(&left, &right);
+        //for _ in 0..10 {
+            benchmark_code(&left, &right);
+        //}
 
         let cycles = new_cpu_cycles_counter();
         let instructions = new_instructions_counter();
@@ -121,13 +123,12 @@ fn main() {
                  branch_hit_rate,
                  instructions_per_node,
                  cycles_per_node,
-        )
-
+        );
     }
 }
 
 fn benchmark_code(left: &Bdd, right: &Bdd) -> (usize, usize) {
-    let (created, counted) = ooo_apply_2(left, right);
+    let (created, counted) = apply(left, right);
     println!("Counted {} nodes, created {} nodes.", counted, created);
     (created, counted)
 }
