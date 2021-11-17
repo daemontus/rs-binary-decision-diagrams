@@ -605,15 +605,12 @@ pub mod coupled_dfs {
 }
 
 pub mod node_cache {
-    use std::num::NonZeroU64;
     use super::packed_bdd_node::PackedBddNode;
     use super::node_id::NodeId;
-    use std::ops::{BitXor, Rem};
     use std::cmp::max;
     use super::ooo_apply::ApplyTask;
 
     pub struct NodeCache {
-        capacity: NonZeroU64,
         index_after_last: usize,
         nodes: Vec<(PackedBddNode, NodeCacheSlot)>,
         table: Vec<NodeCacheSlot>,  // Hashtable pointing to the beginning of linked-lists in the nodes array.
@@ -661,14 +658,11 @@ pub mod node_cache {
     }
 
     impl NodeCache {
-        const HASH_BLOCK: u64 = 1 << 13;
-        const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
 
         pub fn new(table_capacity: usize, node_capacity: usize) -> NodeCache {
             debug_assert!(node_capacity > 2);
             debug_assert!(table_capacity > 0);
             NodeCache {
-                capacity: NonZeroU64::new(table_capacity as u64).unwrap(),
                 index_after_last: 2,    // Initially, there are two nodes already.
                 table: vec![NodeCacheSlot::UNDEFINED; table_capacity],
                 nodes: {
@@ -753,11 +747,12 @@ pub mod node_cache {
         fn hash_position(&self, key: &PackedBddNode) -> usize {
             let low_link: u64 = key.get_low_link().into();
             let high_link: u64 = key.get_high_link().into();
-            let low_hash = low_link.rotate_left(32).wrapping_mul(Self::SEED);
+            /*let low_hash = low_link.rotate_left(32).wrapping_mul(Self::SEED);
             let high_hash = high_link.wrapping_mul(Self::SEED);
             let block_index = low_hash.bitxor(high_hash).rem(Self::HASH_BLOCK);
             let base = max(low_link, high_link);
-            (base + block_index).rem(self.capacity) as usize
+            (base + block_index).rem(self.capacity) as usize*/
+            max(low_link, high_link) as usize
         }
 
     }
@@ -867,7 +862,7 @@ pub mod apply {
     pub fn apply(left_bdd: &Bdd, right_bdd: &Bdd) -> (usize, usize) {
         let height_limit = left_bdd.get_height() + right_bdd.get_height();
         let mut task_cache = TaskCache::new(left_bdd.node_count());
-        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
+        let mut node_cache = NodeCache::new(2 * left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
 
         let mut stack = UnsafeStack::new(height_limit);
@@ -1293,7 +1288,7 @@ pub mod ooo_apply {
         let mut stack = UnsafeStack::new(height_limit);
         let mut rob = ReorderBuffer::new(height_limit);
         let mut queue = ExecutionRetireQueue::<64>::new();
-        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
+        let mut node_cache = NodeCache::new(2 * left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
 
         let mut iter: usize = 0;
@@ -1741,7 +1736,7 @@ pub mod ooo_apply_2 {
         let height_limit = left_bdd.get_height() + right_bdd.get_height();
         let mut stack = OOOStack::new(height_limit);
         let mut task_cache = TaskCache::new(left_bdd.node_count());
-        let mut node_cache = NodeCache::new(left_bdd.node_count(), 2 * left_bdd.node_count());
+        let mut node_cache = NodeCache::new(2 * left_bdd.node_count(), 2 * left_bdd.node_count());
         let mut task_count = 0;
 
         stack.push_to_decode((left_bdd.get_root_id(), right_bdd.get_root_id()));
