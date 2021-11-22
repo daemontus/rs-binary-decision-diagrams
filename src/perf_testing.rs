@@ -873,6 +873,8 @@ pub mod apply {
 
             let offset = (top.offset >> 1) as usize;    // Must be here otherwise top's lifetime will not end before we want to push.
             let mut result = NodeId::UNDEFINED;
+            // We could also try using top.variable, but this version seems to be faster
+            // due to easier branch prediction.
             if top.offset & 1 == 0 {
                 top.offset |= 1;   // mark task as expanded
 
@@ -1466,7 +1468,7 @@ pub mod ooo_apply {
 
 pub mod ooo_apply_2 {
     use std::ops::Rem;
-    use crate::perf_testing::node_cache::NodeCacheSlot;
+    use super::node_cache::NodeCacheSlot;
     use super::bdd::Bdd;
     use super::node_id::NodeId;
     use super::variable_id::VariableId;
