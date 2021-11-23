@@ -100,9 +100,10 @@ impl TaskCache {
         *slot_value = (task, result);
         self.elements += 1;
     }
-/*
-    pub fn grow_if_necessary(&mut self) {
+
+    pub fn grow_if_necessary(&mut self) -> u64 {
         if self.elements >= 2 * self.capacity {
+            println!("Grow task cache. Current: {}.", self.items.len());
             // Add one extra bit into the right index bit mask, and reset element count.
             self.bit_extension = (self.bit_extension << 1) | 1;
             self.elements = 0;
@@ -117,15 +118,27 @@ impl TaskCache {
                     self.write(slot, key, value);
                 }
             }
+            println!("Task cache grown to {}.", self.items.len());
         }
+        2 * self.capacity - self.elements
     }
-*/
+
     fn hashed_index(&self, task: (NodeIndex, NodeIndex)) -> TaskCacheSlot {
         let (left, right) = (u64::from(task.0), u64::from(task.1));
         let right_hash = right.wrapping_mul(Self::SEED);
         let block_offset = right_hash.rem(Self::HASH_BLOCK);
         let shift_bits = 64 - self.bit_extension.leading_zeros();
         let block_base: u64 = (left << shift_bits) | (right & self.bit_extension);
+
+        /*
+        This seems to help in some cases, but also increases instruction count significantly
+        so it mostly isn't worth it. Maybe re-evaluate in the future though?
+        unsafe {
+            let pointer: *const KeyValuePair =
+                self.items.get_unchecked((block_base as usize) + 64);
+            std::arch::x86_64::_mm_prefetch::<1>(pointer as *const i8);
+        }*/
+
         (block_base + block_offset).into()
     }
 

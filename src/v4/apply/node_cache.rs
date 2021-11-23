@@ -161,7 +161,7 @@ impl NodeCache {
         let high_link = key.get_high_link().into_index();
         max(low_link, high_link)
     }
-/*
+
     /// Ensures that the cache can accommodate at least `minimal_capacity` additional nodes.
     /// The returned number is the actual number of nodes that can be inserted without issues.
     pub fn ensure_capacity(&mut self, minimal_capacity: u64) -> u64 {
@@ -170,14 +170,22 @@ impl NodeCache {
             return free_slots;
         }
 
+        let first_new_slot = self.table.len();
         self.nodes.reserve_exact(self.nodes.len());
         self.table.reserve_exact(self.table.len());
+        // Reserve memory without initializing it.
         unsafe {
             self.nodes.set_len(self.nodes.capacity());
             self.table.set_len(self.table.capacity());
         }
+        // Nodes can be left uninitialized but the hash table needs to be erased.
+        for i in first_new_slot..self.table.len() {
+            unsafe {
+                *self.table.get_unchecked_mut(i) = NodeCacheSlot::UNDEFINED;
+            }
+        }
 
         return u64::from_index(self.nodes.len()) - self.index_after_last;
     }
-*/
+
 }
