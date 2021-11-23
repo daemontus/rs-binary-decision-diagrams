@@ -1,14 +1,12 @@
 #![allow(unused_imports)]
 
-use binary_decision_diagrams::perf_testing::bdd::Bdd;
+use binary_decision_diagrams::v4::core::Bdd;
+use binary_decision_diagrams::v4::apply::apply;
 use std::convert::TryFrom;
 use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
 use criterion::measurement::Measurement;
 use criterion_perf_events::Perf;
-use binary_decision_diagrams::perf_testing::ooo_apply_2::ooo_apply_2;
 use std::time::SystemTime;
-use binary_decision_diagrams::perf_testing::apply::apply;
-use binary_decision_diagrams::perf_testing::ooo_apply::ooo_apply;
 
 fn new_cpu_cycles_counter() -> Perf {
     criterion_perf_events::Perf::new(PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::CPUCycles))
@@ -64,12 +62,12 @@ fn main() {
             .ok()
             .and_then(|it| Bdd::try_from(it.as_str()).ok())
             .unwrap();
-        println!("Left ready: {}", left.node_count());
+        println!("Left ready: {}", left.get_size());
         let right = std::fs::read_to_string(&right_path)
             .ok()
             .and_then(|it| Bdd::try_from(it.as_str()).ok())
             .unwrap();
-        println!("Right ready: {}", right.node_count());
+        println!("Right ready: {}", right.get_size());
 
         let left = left.sort_preorder();
         let right = right.sort_preorder();

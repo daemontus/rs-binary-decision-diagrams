@@ -1,4 +1,4 @@
-use super::super::core::{NodeIndex, Bdd};
+use super::super::core::NodeIndex;
 use crate::IntoIndex;
 use std::ops::Rem;
 
@@ -7,20 +7,32 @@ type KeyValuePair = ((NodeIndex, NodeIndex), NodeIndex);
 /// Used to avoid duplicate computation of the same tasks in the apply algorithm.
 ///
 /// Each task is identified by two node indices from the left and right BDDs. The result is
-/// a node index valid within the result BDD.
+/// a node index valid within the output BDD. To avoid bottlenecks in the main algorithm by
+/// the means of failed branch prediction and cache misses, the table is implemented as leaky,
+/// meaning that the elements in it are overwritten on collision.
 ///
-/// The hashing is based on a pseudo-local hash, where the assumption is that the left task id
-/// forms a pseudo-growing sequence (due to the BDD being in pre-order), and the right task id
-/// is used to generate a randomized index into a local block of candidate slots.
+/// The hashing algorithms exploits the assumption that during computation, BDDs should be sorted
+/// in DFS pre-order. As such, the absolute value of the explored indices should be decreasing
+/// (root has the largest index, subsequent nodes are smaller). The the hash itself is then split
+/// into two parts: *base* and *offset*.
 ///
-/// As the table becomes congested, the number of slots increases two-fold, and the low bits
-/// from the right task id are used to form the pseudo-growing sequence of hash base values
-/// as well.
+/// As the base value, we simply use the index into the left BDD. Assuming the left BDD is the
+/// larger of the two arguments, this provides relatively good granularity and locality. In case
+/// the table is congested and needs to grow, we additionally shift in multiple bits from the
+/// right index to obtain a larger base. Therefore, as the table grows, this procedure converges
+/// to a normal `m x n` table where the size of the right BDD is rounded up to the nearest `2^k`.
+///
+/// To compute the offset, we use standard Knuth hashing via constant multiplication. However, the
+/// range of the offset is limited to only a small interval (`2^13` at the moment). As such, once
+/// it is added to the base value, it will add a certain amount of pseudo-random noise to it.
+/// This noise will significantly reduce collisions, but it cannot make the hash diverge too much
+/// from the expected base value and should therefore preserve its locality.
 pub struct TaskCache {
     /// The number of elements inserted into the cache so far. Used to determine whether
     /// we should grow the cache.
-    elements: usize,
-    /// The bit mask that should be applied to the block start
+    elements: u64,
+    /// The bit mask that determines how many bits will be shifted into the hash base from the
+    /// right node index.
     bit_extension: u64,
     /// The actual capacity of the table when discounting the hash block size.
     capacity: u64,
@@ -29,6 +41,10 @@ pub struct TaskCache {
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct TaskCacheSlot(u64);
+
+impl TaskCacheSlot {
+    pub const UNDEFINED: TaskCacheSlot = TaskCacheSlot(u64::MAX);
+}
 
 impl From<u64> for TaskCacheSlot {
     fn from(value: u64) -> Self {
@@ -53,36 +69,41 @@ impl TaskCache {
     const HASH_BLOCK: u64 = 1 << 13;
     const UNDEFINED_ENTRY: KeyValuePair = ((NodeIndex::UNDEFINED, NodeIndex::UNDEFINED), NodeIndex::UNDEFINED);
 
-    pub fn new(left: &Bdd, right: &Bdd) -> TaskCache {
-        debug_assert!(left.get_size() >= right.get_size());
-        let capacity = (left.get_size() + Self::HASH_BLOCK).into_index();
+    pub fn new(initial_capacity: u64) -> TaskCache {
+        // By growing the cash capacity by the hash block size, we ensure that modulo is not needed
+        // on the computed hashed indices.
+        let actual_capacity = initial_capacity + Self::HASH_BLOCK;
         TaskCache {
             elements: 0,
             bit_extension: 0,
-            capacity: left.get_size(),
-            items: vec![Self::UNDEFINED_ENTRY; capacity]
+            capacity: initial_capacity,
+            items: vec![Self::UNDEFINED_ENTRY; actual_capacity.into_index()]
         }
     }
 
-    pub fn read(&self, task: (NodeIndex, NodeIndex)) -> Result<NodeIndex, TaskCacheSlot> {
+    #[inline]
+    pub fn read(&self, task: (NodeIndex, NodeIndex)) -> (NodeIndex, TaskCacheSlot) {
+        // Note that this has been tested as slightly faster than a version that returns
+        // the values as a Result<NodeIndex, TaskCacheSlot>.
         let slot = self.hashed_index(task);
         let slot_value = unsafe { self.items.get_unchecked(slot.into_index()) };
         if slot_value.0 == task {
-            Ok(slot_value.1)
+            (slot_value.1, slot)
         } else {
-            Err(slot)
+            (NodeIndex::UNDEFINED, slot)
         }
     }
 
+    #[inline]
     pub fn write(&mut self, slot: TaskCacheSlot, task: (NodeIndex, NodeIndex), result: NodeIndex) {
         let slot_value = unsafe { self.items.get_unchecked_mut(slot.into_index()) };
         *slot_value = (task, result);
         self.elements += 1;
     }
-
+/*
     pub fn grow_if_necessary(&mut self) {
-        if self.elements >= 2 * self.items.len() {
-            // Add one extra bit from the right task hash, and reset elements count.
+        if self.elements >= 2 * self.capacity {
+            // Add one extra bit into the right index bit mask, and reset element count.
             self.bit_extension = (self.bit_extension << 1) | 1;
             self.elements = 0;
             // Create a new table and swap it with the current one.
@@ -98,12 +119,13 @@ impl TaskCache {
             }
         }
     }
-
+*/
     fn hashed_index(&self, task: (NodeIndex, NodeIndex)) -> TaskCacheSlot {
-        let left: u64 = task.0.into();
-        let right: u64 = task.1.into();
-        let block_base = (left << (64 - self.bit_extension.leading_zeros())) | (right & self.bit_extension);
-        let block_offset = right.wrapping_mul(Self::SEED).rem(Self::HASH_BLOCK);
+        let (left, right) = (u64::from(task.0), u64::from(task.1));
+        let right_hash = right.wrapping_mul(Self::SEED);
+        let block_offset = right_hash.rem(Self::HASH_BLOCK);
+        let shift_bits = 64 - self.bit_extension.leading_zeros();
+        let block_base: u64 = (left << shift_bits) | (right & self.bit_extension);
         (block_base + block_offset).into()
     }
 
